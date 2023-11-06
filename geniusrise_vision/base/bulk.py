@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import transformers
@@ -22,9 +22,6 @@ from geniusrise.logging import setup_logger
 from transformers import (
     Autoprocessor,
     AutoModelForCausalLM,
-    BeamSearchScorer,
-    LogitsProcessorList,
-    MinLengthLogitsProcessor,
 )
 
 
@@ -45,6 +42,7 @@ class ImageBulk(Bolt):
         output (BatchOutput): A data structure to store the output data from the model.
         state (State): An object representing the state of the processing operation.
     """
+
     model: Any
     processor: Any
 
@@ -136,9 +134,7 @@ class ImageBulk(Bolt):
         ProcessorClass = getattr(transformers, processor_class)
 
         # Load the model and processor
-        processor = ProcessorClass.from_pretrained(
-            processor_name, revision=processor_revision, torch_dtype=torch_dtype
-        )
+        processor = ProcessorClass.from_pretrained(processor_name, revision=processor_revision, torch_dtype=torch_dtype)
 
         self.log.info(f"Loading model from {model_name} {model_revision} with {model_args}")
         if quantization == 8:

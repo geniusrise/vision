@@ -20,7 +20,7 @@ from typing import Dict, Optional, List, Callable
 import numpy as np
 from datasets import Dataset, DatasetDict
 from geniusrise import BatchInput, BatchOutput, Bolt, State
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score
 from transformers import EvalPrediction, Trainer, TrainingArguments, AutoConfig
 from accelerate import infer_auto_device_map, init_empty_weights
 from peft import LoraConfig, get_peft_model
@@ -413,7 +413,7 @@ class VisionFineTuner(Bolt):
             num_train_epochs (int): The total number of training epochs to perform.
             per_device_batch_size (int): The batch size per device during training.
             model_class (str, optional): The model class to use. Defaults to "AutoModel".
-            processor_class (str, optional): The processor class to use. Defaults to "Autoprocessor".
+            processor_class (str, optional): The processor class to use. Defaults to "AutoProcessor".
             device_map (str | dict, optional): The device map for distributed training. Defaults to "auto".
             precision (str, optional): The precision to use for training. Defaults to "bfloat16".
             quantization (int, optional): The quantization level to use for training. Defaults to None.
