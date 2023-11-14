@@ -15,12 +15,11 @@
 
 import os
 import pytest
-import itertools
 import torch
 
 # import transformers
 from geniusrise.core import BatchInput, BatchOutput, InMemoryState
-from geniusrise_vision.base.bulk import text
+from geniusrise_vision.base.api import textAPI
 
 
 @pytest.fixture(
