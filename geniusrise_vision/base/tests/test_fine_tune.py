@@ -117,8 +117,8 @@ def test_load_dataset(bolt):
 
 def test_fine_tune(bolt):
     bolt.fine_tune(
-        model_name="google/vit-base-patch16-224",
-        processor_name="google/vit-base-patch16-224",
+        model_name="microsoft/resnet-50",
+        processor_name="microsoft/resnet-50",
         num_train_epochs=1,
         per_device_batch_size=2,
         model_class="AutoModelForImageClassification",
