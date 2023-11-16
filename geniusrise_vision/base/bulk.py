@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 import transformers
 from geniusrise import BatchInput, BatchOutput, Bolt, State
 from geniusrise.logging import setup_logger
@@ -81,6 +81,8 @@ class ImageBulk(Bolt):
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
         torchscript: bool = True,
+        use_accelerate: bool = False,
+        accelerate_no_split_module_classes: List[str] = [],
         **model_args: Any,
     ) -> Tuple[AutoModel, AutoProcessor]:
         """

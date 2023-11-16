@@ -19,12 +19,10 @@ import numpy as np
 import pytest
 import torch
 from torchvision import transforms
-from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 from torchvision.datasets import MNIST
-from torchvision import transforms
 from geniusrise.core import BatchInput, BatchOutput, InMemoryState
-from transformers import EvalPrediction, AutoImageProcessor
+from transformers import EvalPrediction
 from geniusrise_vision.base.fine_tune import VisionFineTuner
 
 
@@ -42,10 +40,6 @@ class DictDataset(Dataset):
 
 
 class TestVisionFineTuner(VisionFineTuner):
-    def __init__(self, input, output, state, evaluate, batch_size=32):
-        super().__init__(input=input, output=output, state=state, evaluate=evaluate)
-        self.batch_size = batch_size
-
     def load_dataset(self, dataset_path, **kwargs):
         # Define the transforms
         transform = transforms.Compose(
@@ -117,14 +111,14 @@ def test_load_dataset(bolt):
 
 def test_fine_tune(bolt):
     bolt.fine_tune(
-        model_name="microsoft/resnet-50",
-        processor_name="microsoft/resnet-50",
+        model_name="google/vit-base-patch16-224",
+        processor_name="google/vit-base-patch16-224",
         num_train_epochs=1,
         per_device_batch_size=2,
         model_class="AutoModelForImageClassification",
         processor_class="AutoProcessor",
         evaluate=False,
-        device_map=None,
+        device_map="auto",
     )
     bolt.upload_to_hf_hub(
         hf_repo_id="ixaxaar/geniusrise-hf-base-test-repo",
@@ -192,7 +186,6 @@ def test_fine_tune_options(bolt, model_size, use_accelerate):
         processor_class="AutoProcessor",
         num_train_epochs=1,
         per_device_batch_size=2,
-        use_accelerate=use_accelerate,
         device_map=None,
     )
 

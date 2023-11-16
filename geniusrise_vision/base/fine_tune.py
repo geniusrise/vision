@@ -125,8 +125,6 @@ class VisionFineTuner(Bolt):
             self.model_name = model_name
             self.log.info(f"Loading model {model_name} and branch {model_revision}")
 
-            # Load model
-
             # Use AutoConfig to automatically load the configuration
             if self.model_name.lower() == "local":  # type: ignore
                 self.log.info(f"Loading local model {model_class} : {self.input.get()}")
@@ -240,7 +238,7 @@ class VisionFineTuner(Bolt):
         num_train_epochs: int,
         per_device_batch_size: int,
         model_class: str = "AutoModel",
-        processor_class: str = "Autoprocessor",
+        processor_class: str = "AutoProcessor",
         device_map: str | dict = "auto",
         evaluate: bool = False,
         map_data: Optional[Callable] = None,
