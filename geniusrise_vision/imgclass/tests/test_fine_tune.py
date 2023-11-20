@@ -14,11 +14,13 @@
 # limitations under the License.
 
 import os
-from geniusrise_vision.imgclass.fine_tune import ImageClassificationFineTuner
-import pytest
 import tempfile
-from PIL import Image
+
+import pytest
 from geniusrise import BatchInput, BatchOutput, InMemoryState
+from PIL import Image
+
+from geniusrise_vision.imgclass.fine_tune import ImageClassificationFineTuner
 
 
 @pytest.fixture
