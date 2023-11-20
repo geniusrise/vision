@@ -13,14 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, List, Optional, Tuple
+
 import transformers
 from geniusrise import BatchInput, BatchOutput, Bolt, State
 from geniusrise.logging import setup_logger
-from transformers import (
-    AutoProcessor,
-    AutoModel,
-)
+from transformers import AutoModel, AutoProcessor
 
 
 class ImageBulk(Bolt):
@@ -122,13 +120,9 @@ class ImageBulk(Bolt):
         processorClass = getattr(transformers, processor_class)
 
         # Load the model and processor
-        processor = processorClass.from_pretrained(
-            processor_name, revision=processor_revision
-        )
+        processor = processorClass.from_pretrained(processor_name, revision=processor_revision)
 
-        self.log.info(
-            f"Loading model from {model_name} {model_revision} with {model_args}"
-        )
+        self.log.info(f"Loading model from {model_name} {model_revision} with {model_args}")
 
         model = ModelClass.from_pretrained(
             model_name,

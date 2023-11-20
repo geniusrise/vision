@@ -13,16 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datasets import Dataset, DatasetDict
-from PIL import Image
 import os
-from typing import Union, Optional, Dict
-import torch
-import numpy as np
-import evaluate
 from collections import defaultdict
-from datasets import load_dataset
+from typing import Dict, Optional, Union
+
+import evaluate
+import numpy as np
+import torch
+from datasets import Dataset, DatasetDict, load_dataset
+from PIL import Image
 from torchvision.transforms.functional import pil_to_tensor
+
 from geniusrise_vision.base import VisionFineTuner
 
 

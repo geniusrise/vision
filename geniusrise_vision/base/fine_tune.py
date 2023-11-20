@@ -15,14 +15,14 @@
 
 import os
 from abc import abstractmethod
-from typing import Dict, Optional, Callable
+from typing import Callable, Dict, Optional
 
 import numpy as np
 from datasets import Dataset, DatasetDict
 from geniusrise import BatchInput, BatchOutput, Bolt, State
-from sklearn.metrics import accuracy_score
-from transformers import EvalPrediction, Trainer, TrainingArguments, AutoConfig
 from geniusrise.logging import setup_logger
+from sklearn.metrics import accuracy_score
+from transformers import AutoConfig, EvalPrediction, Trainer, TrainingArguments
 
 
 class VisionFineTuner(Bolt):

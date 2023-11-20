@@ -14,11 +14,13 @@
 # limitations under the License.
 
 import os
+
 import pytest
 import torch
 
 # import transformers
 from geniusrise.core import BatchInput, BatchOutput, InMemoryState
+
 from geniusrise_vision.base.api import VisionAPI
 
 
