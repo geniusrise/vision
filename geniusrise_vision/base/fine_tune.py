@@ -58,9 +58,7 @@ class VisionFineTuner(Bolt):
         self.log = setup_logger(self)
 
     @abstractmethod
-    def load_dataset(
-        self, dataset_path: str, **kwargs
-    ) -> Dataset | DatasetDict | Optional[Dataset]:
+    def load_dataset(self, dataset_path: str, **kwargs) -> Dataset | DatasetDict | Optional[Dataset]:
         """
         Load a dataset from a file.
 
@@ -128,25 +126,17 @@ class VisionFineTuner(Bolt):
             # Use AutoConfig to automatically load the configuration
             if self.model_name.lower() == "local":  # type: ignore
                 self.log.info(f"Loading local model {model_class} : {self.input.get()}")
-                self.config = AutoConfig.from_pretrained(
-                    os.path.join(self.input.get(), "/model")
-                )
-                self.model = getattr(
-                    __import__("transformers"), str(model_class)
-                ).from_pretrained(
+                self.config = AutoConfig.from_pretrained(os.path.join(self.input.get(), "/model"))
+                self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
                     os.path.join(self.input.get(), "/model"),
                     device_map=device_map,
                     config=self.config,
                     **kwargs,
                 )
             else:
-                self.log.info(
-                    f"Loading from huggingface hub: {model_class} : {model_name}"
-                )
+                self.log.info(f"Loading from huggingface hub: {model_class} : {model_name}")
                 self.config = AutoConfig.from_pretrained(self.model_name)
-                self.model = getattr(
-                    __import__("transformers"), str(model_class)
-                ).from_pretrained(
+                self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
                     model_name,
                     revision=model_revision,
                     device_map=device_map,
@@ -164,19 +154,15 @@ class VisionFineTuner(Bolt):
             self.processor_name = processor_name
 
             if processor_name.lower() == "local":  # type: ignore
-                self.log.info(
-                    f"Loading local processor : {processor_class} : {self.input.get()}"
+                self.log.info(f"Loading local processor : {processor_class} : {self.input.get()}")
+                self.processor = getattr(__import__("transformers"), str(processor_class)).from_pretrained(
+                    os.path.join(self.input.get(), "/model")
                 )
-                self.processor = getattr(
-                    __import__("transformers"), str(processor_class)
-                ).from_pretrained(os.path.join(self.input.get(), "/model"))
             else:
-                self.log.info(
-                    f"Loading processor from huggingface hub: {processor_class} : {processor_name}"
+                self.log.info(f"Loading processor from huggingface hub: {processor_class} : {processor_name}")
+                self.processor = getattr(__import__("transformers"), str(processor_class)).from_pretrained(
+                    processor_name, revision=processor_revision
                 )
-                self.processor = getattr(
-                    __import__("transformers"), str(processor_class)
-                ).from_pretrained(processor_name, revision=processor_revision)
         except Exception as e:
             self.log.exception(f"Failed to load model: {e}")
             raise
@@ -194,9 +180,7 @@ class VisionFineTuner(Bolt):
             if self.model:
                 self.model.to("cpu").push_to_hub(
                     repo_id=hf_repo_id if hf_repo_id else self.hf_repo_id,
-                    commit_message=hf_commit_message
-                    if hf_commit_message
-                    else self.hf_commit_message,
+                    commit_message=hf_commit_message if hf_commit_message else self.hf_commit_message,
                     token=hf_token if hf_token else self.hf_token,
                     private=hf_private if hf_private else self.hf_private,
                     create_pr=hf_create_pr if hf_create_pr else self.hf_create_pr,
@@ -204,9 +188,7 @@ class VisionFineTuner(Bolt):
             if self.processor:
                 self.processor.push_to_hub(
                     repo_id=hf_repo_id if hf_repo_id else self.hf_repo_id,
-                    commit_message=hf_commit_message
-                    if hf_commit_message
-                    else self.hf_commit_message,
+                    commit_message=hf_commit_message if hf_commit_message else self.hf_commit_message,
                     token=hf_token if hf_token else self.hf_token,
                     private=hf_private if hf_private else self.hf_private,
                     create_pr=hf_create_pr if hf_create_pr else self.hf_create_pr,
@@ -289,9 +271,7 @@ class VisionFineTuner(Bolt):
             self.hf_create_pr = hf_create_pr
             self.map_data = map_data
 
-            model_kwargs = {
-                k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k
-            }
+            model_kwargs = {k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k}
 
             self.load_models(
                 model_name=self.model_name,
@@ -303,22 +283,12 @@ class VisionFineTuner(Bolt):
             )
 
             # Load dataset
-            dataset_kwargs = {
-                k.replace("data_", ""): v for k, v in kwargs.items() if "data_" in k
-            }
+            dataset_kwargs = {k.replace("data_", ""): v for k, v in kwargs.items() if "data_" in k}
             self.preprocess_data(**dataset_kwargs)
 
             # Separate training and evaluation arguments
-            trainer_kwargs = {
-                k.replace("trainer_", ""): v
-                for k, v in kwargs.items()
-                if "trainer_" in k
-            }
-            training_kwargs = {
-                k.replace("training_", ""): v
-                for k, v in kwargs.items()
-                if "training_" in k
-            }
+            trainer_kwargs = {k.replace("trainer_", ""): v for k, v in kwargs.items() if "trainer_" in k}
+            training_kwargs = {k.replace("training_", ""): v for k, v in kwargs.items() if "training_" in k}
 
             # Create training arguments
             training_args = TrainingArguments(
@@ -337,6 +307,7 @@ class VisionFineTuner(Bolt):
                 train_dataset=self.train_dataset,
                 eval_dataset=self.eval_dataset if self.evaluate else None,
                 compute_metrics=self.compute_metrics,
+                tokenizer=self.processor,
                 **trainer_kwargs,
             )
 
@@ -350,9 +321,7 @@ class VisionFineTuner(Bolt):
 
             # Save the model configuration to Hugging Face Hub if hf_repo_id is not None
             if self.hf_repo_id:
-                self.config.save_pretrained(
-                    os.path.join(self.output.output_folder, "model")
-                )
+                self.config.save_pretrained(os.path.join(self.output.output_folder, "model"))
                 self.upload_to_hf_hub()
 
         except Exception as e:
