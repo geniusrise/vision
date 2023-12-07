@@ -54,7 +54,6 @@ class VisionAPI(ImageBulk):
         model_name: str,
         model_class: str = "AutoModel",
         processor_class: str = "AutoProcessor",
-        use_cuda: bool = False,
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
         torchscript: bool = True,
@@ -72,7 +71,6 @@ class VisionAPI(ImageBulk):
             model_name (str): The name of the pre-trained vision model.
             model_class (str, optional): The class of the pre-trained vision model. Defaults to "AutoModel".
             processor_class (str, optional): The class of the processor for input image preprocessing. Defaults to "AutoProcessor".
-            use_cuda (bool, optional): Flag to use GPU for model inference. Defaults to False.
             device_map (str | Dict | None, optional): Device mapping for model inference. Defaults to "auto".
             max_memory (Dict[int, str], optional): Maximum memory allocation for model inference. Defaults to {0: "24GB"}.
             torchscript (bool, optional): Whether to use TorchScript for model optimization. Defaults to True.
@@ -86,7 +84,6 @@ class VisionAPI(ImageBulk):
         self.model_name = model_name
         self.model_class = model_class
         self.processor_class = processor_class
-        self.use_cuda = use_cuda
         self.device_map = device_map
         self.max_memory = max_memory
         self.torchscript = torchscript
@@ -116,7 +113,6 @@ class VisionAPI(ImageBulk):
             processor_revision=self.processor_revision,
             model_class=self.model_class,
             processor_class=self.processor_class,
-            use_cuda=self.use_cuda,
             device_map=self.device_map,
             max_memory=self.max_memory,
             torchscript=self.torchscript,
@@ -129,8 +125,12 @@ class VisionAPI(ImageBulk):
             This allows the server to accept requests from the specified domain.
             """
             # Setting up CORS headers
-            cherrypy.response.headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
-            cherrypy.response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            cherrypy.response.headers[
+                "Access-Control-Allow-Origin"
+            ] = "http://localhost:3000"
+            cherrypy.response.headers[
+                "Access-Control-Allow-Methods"
+            ] = "GET, POST, PUT, DELETE, OPTIONS"
             cherrypy.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
             cherrypy.response.headers["Access-Control-Allow-Credentials"] = "true"
 
@@ -138,18 +138,56 @@ class VisionAPI(ImageBulk):
                 cherrypy.response.status = 200
                 return True
 
-        # Update CherryPy configuration with server details
-        cherrypy.config.update(
+            cherrypy.config.update(
             {
                 "server.socket_host": "0.0.0.0",
                 "server.socket_port": port,
                 "log.screen": False,
                 "tools.CORS.on": True,
+                "error_page.400": error_page,
+                "error_page.401": error_page,
+                "error_page.402": error_page,
+                "error_page.403": error_page,
+                "error_page.404": error_page,
+                "error_page.405": error_page,
+                "error_page.406": error_page,
+                "error_page.408": error_page,
+                "error_page.415": error_page,
+                "error_page.429": error_page,
+                "error_page.500": error_page,
+                "error_page.501": error_page,
+                "error_page.502": error_page,
+                "error_page.503": error_page,
+                "error_page.504": error_page,
+                "error_page.default": error_page,
             }
         )
 
+        if username and password:
+            # Configure basic authentication
+            conf = {
+                "/": {
+                    "tools.auth_basic.on": True,
+                    "tools.auth_basic.realm": "geniusrise",
+                    "tools.auth_basic.checkpassword": self.validate_password,
+                    "tools.CORS.on": True,
+                }
+            }
+        else:
+            # Configuration without authentication
+            conf = {"/": {"tools.CORS.on": True}}
+
         cherrypy.tools.CORS = cherrypy.Tool("before_handler", CORS)
-        cherrypy.tree.mount(self, "/api/v1/", {"/": {"tools.CORS.on": True}})
+        cherrypy.tree.mount(self, "/api/v1/", conf)
         cherrypy.tools.CORS = cherrypy.Tool("before_finalize", CORS)
         cherrypy.engine.start()
         cherrypy.engine.block()
+
+
+def error_page(status, message, traceback, version):
+    response = {
+        "status": status,
+        "message": message,
+    }
+    return json.dumps(response)
+
