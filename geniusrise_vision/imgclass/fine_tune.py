@@ -16,7 +16,7 @@
 import os
 from collections import defaultdict
 from typing import Dict, Optional, Union
-
+from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import torch
 from datasets import Dataset, DatasetDict, load_dataset
@@ -72,40 +72,89 @@ class ImageClassificationFineTuner(VisionFineTuner):
         label_to_index = self._create_label_index(dataset_path)
         self._save_label_index(label_to_index)
 
-        # Initialize a dictionary to hold image paths and their corresponding labels
         image_labels = defaultdict(list)
+        num_classes = len(label_to_index)
 
-        # Aggregate labels for each image
-        for label, index in label_to_index.items():
-            class_dir = os.path.join(dataset_path, label)
-            for img_file in os.listdir(class_dir):
-                image_labels[img_file].append(index)
+        # Determine if the dataset has 'train' and 'test' directories
+        has_train_test_split = all(
+            os.path.isdir(os.path.join(dataset_path, split))
+            for split in ["train", "test"]
+        )
+        splits = ["train", "test"] if has_train_test_split else [""]
 
-        # Load images and labels
+        # Iterate through splits and class directories
+        for split in splits:
+            split_dir = os.path.join(dataset_path, split) if split else dataset_path
+            for label in label_to_index:
+                class_dir = os.path.join(split_dir, label)
+                if os.path.isdir(class_dir):
+                    for img_file in os.listdir(class_dir):
+                        img_path = os.path.join(class_dir, img_file)
+                        if os.path.isfile(img_path):
+                            label_idx = label_to_index[label]
+
+                            # Use image file name for label aggregation
+                            if img_file in image_labels and is_multiclass:
+                                # Add the new label index if it's not already present
+                                if label_idx not in image_labels[img_file]['labels']:
+                                    image_labels[img_file]['labels'].append(label_idx)
+                            else:
+                                # Store both the full path and label
+                                image_labels[img_file] = {'path': img_path, 'labels': [label_idx]}
+
         images, labels = [], []
-        for img_file, label_indices in image_labels.items():
+        for img_file, data in image_labels.items():
+            img_path = data['path']  # Retrieve the full path
+            label_indices = data['labels']
             try:
-                img_path = os.path.join(
-                    dataset_path, self.model.config.id2label[label_indices[0]], img_file
-                )
-                with Image.open(img_path) as img:
-                    # Process image using the Hugging Face processor
-                    # processed_img = self.processor(images=img, return_tensors="pt")
-                    images.append(pil_to_tensor(img))
-                    labels.append(label_indices if is_multiclass else label_indices[0])
+                with Image.open(img_path).convert('RGB') as img:
+                    # Convert image to tensor and then to float
+                    image_tensor = pil_to_tensor(img).float()
+                    if image_tensor.nelement() == 0:  # Check for empty tensor
+                        continue
+                    images.append(image_tensor)
+
+                    if is_multiclass:
+                        # OneHot Encoding 
+                        label_tensor = torch.zeros(num_classes, dtype=torch.long)
+                        label_tensor.scatter_(0, torch.tensor(label_indices, dtype=torch.long), 1)
+                    else:
+                        label_tensor = torch.tensor(label_indices, dtype=torch.long)
+
+                    labels.append(label_tensor)
             except Exception as e:
                 self.log.exception(
                     f"Error loading image {os.path.basename(img_path)}: {e}"
                 )
 
-        # Stack the images and labels into tensors
-        images = torch.stack(images)  # type: ignore
-        labels = torch.tensor(labels)  # type: ignore
+        if not images:
+            raise RuntimeError("No images were loaded.")
 
-        # Create a Hugging Face Dataset
-        dataset = Dataset.from_dict({"image": images, "label": labels})
+        images = torch.stack(images)
+        labels = torch.stack(labels)
 
-        return dataset
+        tensor_dataset = TensorDataset(images, labels)
+        return tensor_dataset
+
+    def custom_vision_collator(self, batch):
+        """
+        Collates batches of our dataset.
+
+        Args:
+            batch: A batch from the dataset.
+
+        Returns:
+            A dictionary with the keys 'pixel_values' and 'labels'.
+        """
+        # Assuming each item in the batch is a tuple (image, label)
+        pixel_values = [item[0] for item in batch]  # Extract all image tensors
+        labels = [item[1] for item in batch]        # Extract all label tensors
+
+        # Stack the extracted image tensors and label tensors
+        pixel_values = torch.stack(pixel_values)
+        labels = torch.stack(labels)
+
+        return {"pixel_values": pixel_values, "labels": labels}
 
     def _create_label_index(self, dataset_path: str) -> Dict[str, int]:
         """
@@ -117,9 +166,26 @@ class ImageClassificationFineTuner(VisionFineTuner):
         Returns:
             Dict[str, int]: A dictionary mapping label names to indices.
         """
-        classes = [d.name for d in os.scandir(dataset_path) if d.is_dir()]
-        label_to_index = {cls_name: i for i, cls_name in enumerate(classes)}
+        # Check if 'train' and 'test' directories exist
+        has_train_test_split = all(
+            os.path.isdir(os.path.join(dataset_path, split))
+            for split in ["train", "test"]
+        )
+
+        # Initialize an empty set for class names
+        class_names = set()
+
+        # Choose the directories to scan for class names based on the dataset structure
+        if has_train_test_split:
+            for split in ["train", "test"]:
+                class_dir = os.path.join(dataset_path, split)
+                class_names.update(d.name for d in os.scandir(class_dir) if d.is_dir())
+        else:
+            class_names.update(d.name for d in os.scandir(dataset_path) if d.is_dir())
+
+        label_to_index = {cls_name: i for i, cls_name in enumerate(sorted(class_names))}
         return label_to_index
+
 
     def _save_label_index(self, label_to_index: Dict[str, int]):
         """
