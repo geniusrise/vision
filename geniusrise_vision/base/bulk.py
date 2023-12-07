@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import transformers
 from geniusrise import BatchInput, BatchOutput, Bolt, State
@@ -75,12 +75,9 @@ class ImageBulk(Bolt):
         processor_revision: Optional[str] = None,
         model_class: str = "AutoModel",
         processor_class: str = "AutoProcessor",
-        use_cuda: bool = False,
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
         torchscript: bool = True,
-        use_accelerate: bool = False,
-        accelerate_no_split_module_classes: List[str] = [],
         **model_args: Any,
     ) -> Tuple[AutoModel, AutoProcessor]:
         """
@@ -93,7 +90,6 @@ class ImageBulk(Bolt):
             processor_revision (Optional[str]): The specific revision of the processor to be loaded.
             model_class (str): The class name of the model to be loaded from the transformers package.
             processor_class (str): The class name of the processor to be loaded.
-            use_cuda (bool): Whether to load the model on CUDA-enabled devices.
             precision (str): The floating-point precision to be used by the model. Options are 'float32', 'float16', 'bfloat16'.
             quantization (int): The level of model quantization for memory optimization. Options are 0, 8, 4.
             device_map (Union[str, Dict, None]): The device mapping for model parallelism. 'auto' or specific mapping dict.
@@ -113,16 +109,17 @@ class ImageBulk(Bolt):
         """
         self.log.info(f"Loading Hugging Face model: {model_name}")
 
-        if use_cuda and not device_map:
-            device_map = "auto"
-
         ModelClass = getattr(transformers, model_class)
         processorClass = getattr(transformers, processor_class)
 
         # Load the model and processor
-        processor = processorClass.from_pretrained(processor_name, revision=processor_revision)
+        processor = processorClass.from_pretrained(
+            processor_name, revision=processor_revision
+        )
 
-        self.log.info(f"Loading model from {model_name} {model_revision} with {model_args}")
+        self.log.info(
+            f"Loading model from {model_name} {model_revision} with {model_args}"
+        )
 
         model = ModelClass.from_pretrained(
             model_name,
