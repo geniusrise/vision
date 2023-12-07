@@ -17,11 +17,12 @@ import os
 from collections import defaultdict
 from typing import Dict, Optional, Union
 
-import evaluate
 import numpy as np
 import torch
 from datasets import Dataset, DatasetDict, load_dataset
 from PIL import Image
+from transformers import EvalPrediction
+from sklearn.metrics import accuracy_score
 from torchvision.transforms.functional import pil_to_tensor
 
 from geniusrise_vision.base import VisionFineTuner
@@ -84,14 +85,18 @@ class ImageClassificationFineTuner(VisionFineTuner):
         images, labels = [], []
         for img_file, label_indices in image_labels.items():
             try:
-                img_path = os.path.join(dataset_path, self.model.config.id2label[label_indices[0]], img_file)
+                img_path = os.path.join(
+                    dataset_path, self.model.config.id2label[label_indices[0]], img_file
+                )
                 with Image.open(img_path) as img:
                     # Process image using the Hugging Face processor
                     # processed_img = self.processor(images=img, return_tensors="pt")
                     images.append(pil_to_tensor(img))
                     labels.append(label_indices if is_multiclass else label_indices[0])
             except Exception as e:
-                self.log.exception(f"Error loading image {os.path.basename(img_path)}: {e}")
+                self.log.exception(
+                    f"Error loading image {os.path.basename(img_path)}: {e}"
+                )
 
         # Stack the images and labels into tensors
         images = torch.stack(images)  # type: ignore
@@ -125,11 +130,17 @@ class ImageClassificationFineTuner(VisionFineTuner):
         """
         if self.model.config:
             self.model.config.label2id = label_to_index
-            self.model.config.id2label = {id: label for label, id in label_to_index.items()}
+            self.model.config.id2label = {
+                id: label for label, id in label_to_index.items()
+            }
         else:
-            self.log.warning("Model configuration is not loaded. Cannot save label index.")
+            self.log.warning(
+                "Model configuration is not loaded. Cannot save label index."
+            )
 
-    def compute_metrics(p):
-        """Computes accuracy on a batch of predictions"""
-        metric = evaluate.load("accuracy")
-        return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
+    def compute_metrics(self, eval_pred: EvalPrediction) -> Dict[str, float]:
+        predictions, labels = eval_pred
+        predictions = np.argmax(predictions, axis=1)
+        return {
+            "accuracy": accuracy_score(labels, predictions),
+        }

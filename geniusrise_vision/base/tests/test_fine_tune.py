@@ -49,11 +49,15 @@ class TestVisionFineTuner(VisionFineTuner):
                 transforms.Grayscale(num_output_channels=3),  # Convert to 3-channel RGB
                 transforms.ToTensor(),
                 transforms.Resize((224, 224)),
-                transforms.Normalize((0.1307, 0.1307, 0.1307), (0.3081, 0.3081, 0.3081)),  # Normalize for 3 channels
+                transforms.Normalize(
+                    (0.1307, 0.1307, 0.1307), (0.3081, 0.3081, 0.3081)
+                ),  # Normalize for 3 channels
             ]
         )
         # Load the MNIST dataset with the specified transforms
-        mnist_dataset = MNIST(root=dataset_path, train=True, download=True, transform=transform)
+        mnist_dataset = MNIST(
+            root=dataset_path, train=True, download=True, transform=transform
+        )
 
         # Wrap the MNIST dataset in the DictDataset wrapper
         dataset = DictDataset(mnist_dataset)
@@ -127,9 +131,18 @@ def test_fine_tune(bolt):
     )
 
     # Check that model files are created in the output directory
-    assert os.path.isfile(os.path.join(bolt.output.output_folder, "model", "pytorch_model.bin"))
-    assert os.path.isfile(os.path.join(bolt.output.output_folder, "model", "config.json"))
-    assert os.path.isfile(os.path.join(bolt.output.output_folder, "model", "training_args.bin"))
+    assert os.path.isfile(
+        os.path.join(bolt.output.output_folder, "model", "pytorch_model.bin")
+    )
+    assert os.path.isfile(
+        os.path.join(bolt.output.output_folder, "model", "config.json")
+    )
+    assert os.path.isfile(
+        os.path.join(bolt.output.output_folder, "model", "training_args.bin")
+    )
+    assert os.path.isfile(
+        os.path.join(bolt.output.output_folder, "model", "preprocessor_config.bin")
+    )
 
     del bolt.model
     del bolt.processor
@@ -155,20 +168,16 @@ models = {
 
 
 @pytest.mark.parametrize(
-    "model_size, use_accelerate",
-    [
+    "model_size,"[
         # small
-        ("small", False),
-        ("small", True),
+        ("small"),
         # medium
-        ("medium", False),
-        ("medium", True),
+        ("medium"),
         # large
-        ("large", False),
-        ("large", True),
+        ("large"),
     ],
 )
-def test_fine_tune_options(bolt, model_size, use_accelerate):
+def test_fine_tune_options(bolt, model_size):
     model = models[model_size]
 
     bolt.fine_tune(
@@ -182,15 +191,27 @@ def test_fine_tune_options(bolt, model_size, use_accelerate):
     )
 
     # Verify the model has been fine-tuned by checking the existence of model files
-    assert os.path.exists(os.path.join(bolt.output.output_folder, "model", "pytorch_model.bin"))
-    assert os.path.exists(os.path.join(bolt.output.output_folder, "model", "config.json"))
-    assert os.path.exists(os.path.join(bolt.output.output_folder, "model", "training_args.bin"))
+    assert os.path.exists(
+        os.path.join(bolt.output.output_folder, "model", "pytorch_model.bin")
+    )
+    assert os.path.exists(
+        os.path.join(bolt.output.output_folder, "model", "config.json")
+    )
+    assert os.path.exists(
+        os.path.join(bolt.output.output_folder, "model", "training_args.bin")
+    )
+    assert os.path.exists(
+        os.path.join(bolt.output.output_folder, "model", "preprocessor_config.bin")
+    )
 
     # Clear the output directory for the next test
     try:
         os.remove(os.path.join(bolt.output.output_folder, "model", "pytorch_model.bin"))
         os.remove(os.path.join(bolt.output.output_folder, "model", "config.json"))
         os.remove(os.path.join(bolt.output.output_folder, "model", "training_args.bin"))
+        os.remove(
+            os.path.join(bolt.output.output_folder, "model", "preprocessor_config.bin")
+        )
     except FileNotFoundError:
         pass
 
@@ -203,6 +224,9 @@ def test_fine_tune_options(bolt, model_size, use_accelerate):
         os.remove(os.path.join(bolt.output.output_folder, "model", "pytorch_model.bin"))
         os.remove(os.path.join(bolt.output.output_folder, "model", "config.json"))
         os.remove(os.path.join(bolt.output.output_folder, "model", "training_args.bin"))
+        os.remove(
+            os.path.join(bolt.output.output_folder, "model", "preprocessor_config.bin")
+        )
     except Exception as _:
         pass
 
