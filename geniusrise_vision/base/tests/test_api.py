@@ -26,17 +26,17 @@ from geniusrise_vision.base.api import VisionAPI
 
 @pytest.fixture(
     params=[
-        # model_name, model_class, processor_class, use_cuda, device_map, max_memory, torchscript
+        # model_name, model_class, processor_class, device_map, max_memory, torchscript
         # fmt: off
-        ("google/vit-base-patch16-224", "AutoModel", "AutoProcessor", 0, None, None, False),
-        ("google/vit-base-patch16-224", "AutoModel", "AutoProcessor", 0, None, None, False),
-        ("nateraw/vit-age-classifier", "AutoModel", "AutoProcessor", 0, None, None, False),
-        ("microsoft/resnet-50", "AutoModel", "AutoProcessor", 0, None, None, False),
-        ("nateraw/food", "AutoModel", "AutoProcessor", 0, "auto", None, False),
-        ("nateraw/food", "AutoModel", "AutoProcessor", 0, "cuda:0", None, True),
-        ("nateraw/food", "AutoModel", "AutoProcessor", 0, "cuda:0", None, True),
-        ("nateraw/food", "AutoModel", "AutoProcessor", 0, "auto", None, True),
-        ("google/vit-base-patch16-384", "AutoModel", "AutoProcessor", None, "auto", None, False),
+        ("google/vit-base-patch16-224", "AutoModel", "AutoProcessor", None, None, False),
+        ("google/vit-base-patch16-224", "AutoModel", "AutoProcessor", None, None, False),
+        ("nateraw/vit-age-classifier", "AutoModel", "AutoProcessor", None, None, False),
+        ("microsoft/resnet-50", "AutoModel", "AutoProcessor", None, None, False),
+        ("nateraw/food", "AutoModel", "AutoProcessor", "auto", None, False),
+        ("nateraw/food", "AutoModel", "AutoProcessor", "cuda:0", None, True),
+        ("nateraw/food", "AutoModel", "AutoProcessor", "cuda:0", None, True),
+        ("nateraw/food", "AutoModel", "AutoProcessor","auto", None, True),
+        ("google/vit-base-patch16-384", "AutoModel", "AutoProcessor","auto", None, False),
         # fmt: on
     ]
 )
@@ -73,7 +73,6 @@ def test_load_models(hfa, model_config):
         model_name,
         model_class,
         processor_class,
-        use_cuda,
         device_map,
         max_memory,
         torchscript,
@@ -96,7 +95,6 @@ def test_load_models(hfa, model_config):
         processor_revision=processor_revision,
         model_class=model_class,
         processor_class=processor_class,
-        use_cuda=use_cuda,
         device_map=device_map,
         max_memory=max_memory,
         torchscript=torchscript,
