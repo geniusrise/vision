@@ -13,7 +13,6 @@ black==23.7.0
 bleach==6.0.0
 boto3==1.28.25
 botocore==1.31.25
-Brotli @ file:///D:/bld/brotli-split_1695989908365/work
 build==0.10.0
 cachetools==5.3.1
 certifi==2023.7.22
