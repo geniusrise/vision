@@ -28,6 +28,7 @@ cryptography==41.0.3
 datasets==2.14.6
 dill==0.3.7
 direnv==2020.12.3
+distutils
 docstring-parser==0.15
 docutils==0.20.1
 emoji==2.7.0
