@@ -26,7 +26,7 @@ import mmocr
 import easyocr
 from PIL import Image
 from datasets import Dataset, DatasetDict
-from transformers import TrOCRProcessor, NougatProcessor, VisionEncoderDecoderModel
+from transformers import AutoProcessor, AutoModelForVision2Seq, VisionEncoderDecoderModel
 from mmocr.apis import MMOCRInferencer
 from paddleocr import PaddleOCR, draw_ocr
 from transformers import StoppingCriteria, StoppingCriteriaList
@@ -41,84 +41,125 @@ from PIL import Image, ImageOps
 
 
 class ImageOCRAPI(VisionAPI):
-    def __init__(self, model_name: str, kind: str, input: BatchInput, output: BatchOutput, state: State, use_cuda: bool = True):
+    def __init__(self, 
+        input: BatchInput, 
+        output: BatchOutput, 
+        state: State, 
+        use_cuda: bool = True):
+
         super().__init__(input=input, output=output, state=state)
          # Initialize model and processor
-        self.model_name = model_name
-        self.kind = kind
         self.use_cuda = use_cuda and torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
 
-        # Initialize the model and processor based on the model name
-        if self.model_name == "trocr":
-            self.processor = TrOCRProcessor.from_pretrained(f"microsoft/trocr-large-{self.kind}")
-            self.model = VisionEncoderDecoderModel.from_pretrained(f"microsoft/trocr-large-{self.kind}")
-        elif self.model_name == "easyocr":
-            self.reader = easyocr.Reader(['ch_sim','en'], quantize=False)
-        elif self.model_name == "mmocr":
-            self.mmocr_infer = MMOCRInferencer(det='dbnet', rec='svtr-small', kie='SDMGR', device=self.device)
-        elif self.model_name == "paddleocr":
-            self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=self.use_cuda)
-        elif self.model_name == "nougat":
-            self.processor = NougatProcessor.from_pretrained("facebook/nougat-base")
-            self.model = VisionEncoderDecoderModel.from_pretrained("facebook/nougat-base")
-        else:
-            raise ValueError("Invalid OCR engine. Choose 'trocr', 'easyocr', 'mmocr', 'paddleocr', 'nougat'.")
+    def initialize_model(
+        self, 
+        model_name: str = None, 
+        model_type: str = None, 
+        kind: str = None, 
+        use_easyocr_bbox: bool = False):
 
-        if self.model_name in ["trocr", "nougat"]:
-            self.model.to(self.device)
+        self.use_easyocr_bbox = use_easyocr_bbox
+        self.model_name = model_name
+        self.model_type = model_type
+        self.kind = kind
+
+        # Initialize the model and processor based on the model name
+        if model_type == "hf":
+            processor_model_id = f"{model_name}-{kind}" if kind else model_name
+            self.processor = AutoProcessor.from_pretrained(processor_model_id)
+            self.model = AutoModelForVision2Seq.from_pretrained(processor_model_id).to(self.device)
+        elif model_name == "easyocr":
+            self.reader = easyocr.Reader(['ch_sim','en'], quantize=False)
+            print("easyocr installed")
+        elif model_name == "mmocr":
+            self.mmocr_infer = MMOCRInferencer(det='dbnet', rec='svtr-small', kie='SDMGR', device=self.device)
+        elif model_name == "paddleocr":
+            self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=self.use_cuda)
+        else:
+            raise ValueError("Invalid OCR engine.")
 
     @cherrypy.expose
     @cherrypy.tools.json_in()
     @cherrypy.tools.json_out()
     @cherrypy.tools.allow(methods=["POST"])
     def ocr(self):
-        """
-        Perform OCR on a given image using the specified model.
-        """
         try:
             data = cherrypy.request.json
             image_base64 = data.get("image_base64", "")
             image_bytes = base64.b64decode(image_base64)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            print("image initialized")
+            image_name = data.get("image_name", "Unnamed Image")
+            if self.model_type == "hf":
+                ocr_text = self.process_huggingface_models(image)
+            else:
+                print("entering process_other_models")
+                ocr_text = self.process_other_models(image)
 
-            if self.model_name == "trocr":
-                # OCR using trocr and easyocr
-                return self._process_trocr(image, self.kind, self.use_cuda)
-            elif self.model_name == "nougat":
-                # OCR using nougat
-                return self._process_nougat(image, self.use_cuda)
-            elif self.model_name == "easyocr":
-                # OCR using easyocr
-                return self._process_easyocr(image, self.use_cuda)
-            elif self.model_name == "mmocr":
-                # OCR using mmocr
-                return self._process_mmocr(image, self.use_cuda)
-            elif self.model_name == "paddleocr":
-                # OCR using paddleocr
-                return self._process_paddleocr(image, self.use_cuda)
+            return {"success": True, "ocr_text": ocr_text, "image_name": image_name}
 
         except Exception as e:
             cherrypy.log.error(f"Error processing image: {e}")
             return {"success": False, "error": str(e)}
 
-    def _process_trocr(
-        self,
+
+    def process_huggingface_models(self, image: Image.Image, kind: str, use_cuda: bool, use_easyocr_bbox: bool):
+        # Convert PIL Image to Tensor
+        pixel_values = self.processor(images=image, return_tensors="pt").pixel_values.to(self.device)
+        if "nougat" in self.model_name.lower():
+            # Generate transcription using Nougat
+            outputs = self.model.generate(
+                pixel_values.to(self.device),
+                min_length=1,
+                max_length=3584,
+                bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
+                return_dict_in_generate=True,
+                output_scores=True,
+                stopping_criteria=StoppingCriteriaList([StoppingCriteriaScores()]),
+            )
+            sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
+            sequence = self.processor.post_process_generation(sequence, fix_markdown=False)
+        else:
+            if self.use_easyocr_bbox:
+                self._process_with_easyocr_bbox(image,use_cuda)
+            else:
+                outputs = self.model.generate(pixel_values)
+                sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
+        
+        return sequence
+
+    def process_other_models(self, image: Image.Image):
+        # Convert PIL Image to OpenCV format
+        print("process_other_models entered")
+        open_cv_image = np.array(image) 
+        open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
+        if self.model_name == "easyocr":
+            # Perform OCR using EasyOCR
+            ocr_results = self.reader.readtext(open_cv_image, detail=0, paragraph=True)
+            concatenated_text = ' '.join(ocr_results)
+        elif self.model_name == "mmocr":
+            concatenated_text = ''            
+            # Perform OCR using MMOCR
+            result = self.mmocr_infer(open_cv_image, save_vis=False)
+            predictions = result['predictions']
+            # Extract texts and scores
+            texts = [pred['rec_texts'] for pred in predictions]
+            ocr_texts = [' '.join(text) for text in texts]
+            concatenated_texts = ' '.join(ocr_texts)
+        elif self.model_name == "paddleocr":
+            # Perform OCR using PaddleOCR
+            result = self.paddleocr_model.ocr(open_cv_image, cls=False)
+            # Extract texts
+            texts = [line[1][0] for line in result]
+            concatenated_text = ' '.join(texts)
+        else:
+            raise ValueError("Invalid OCR engine.")
+        return concatenated_text
+    
+    def _process_with_easyocr_bbox(self,
         image: Image.Image,
-        kind: str, 
-        use_cuda: bool):
-        """
-            Perform OCR on a single image by detecting text regions with EasyOCR and 
-            recognizing text with TROCR.
-
-            Args:
-                image (Image.Image): Image to process.
-                kind (str): The kind of TROCR model to use ('printed' or 'handwritten').
-                use_cuda (bool): Whether to use CUDA for model inference.
-
-            Returns:
-                Dict: A dictionary with combined OCR text and the base64 encoded image.
-        """
+        use_cuda: bool ):
         # Initialize EasyOCR reader
         reader = easyocr.Reader(['ch_sim','en'], quantize=False)
 
@@ -135,150 +176,15 @@ class ImageOCRAPI(VisionAPI):
             x_min, y_min = map(int, bbox[0])
             x_max, y_max = map(int, bbox[2])
             x_min, y_min, x_max, y_max = max(0, x_min), max(0, y_min), min(image.width, x_max), min(image.height, y_max)
-
             if x_max > x_min and y_max > y_min:
                 # Crop the detected region from the PIL Image
                 text_region = image.crop((x_min, y_min, x_max, y_max))
-
                 # Convert cropped image to Tensor
                 pixel_values = self.processor(images=text_region, return_tensors="pt").pixel_values.to(self.device)
-
                 # Perform OCR using TROCR
                 generated_ids = self.model.generate(pixel_values)
                 generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
                 image_texts.append(generated_text)
-
         full_text = ' '.join(image_texts)
-
-        # Convert the original PIL image to base64 for returning
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        return {"ocr_text": full_text, "image_base64": image_base64}
-
-    def _process_easyocr(self, image: Image.Image, use_cuda: bool):
-        """
-        Perform OCR on a single image using EasyOCR and return the OCR text and the image.
-
-        Args:
-            image (Image.Image): Image to process.
-            use_cuda (bool): Whether to use CUDA for EasyOCR.
-
-        Returns:
-            Dict: A dictionary with OCR text and the base64 encoded image.
-        """
-
-        # Convert PIL Image to OpenCV format
-        open_cv_image = np.array(image) 
-        open_cv_image = open_cv_image[:, :, ::-1].copy()  # RGB to BGR
-
-        # Perform OCR using EasyOCR
-        ocr_results = self.reader.readtext(open_cv_image, detail=0, paragraph=True)
-        concatenated_text = ' '.join(ocr_results)
-
-        # Convert the original PIL image to base64 for returning
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        return {"ocr_text": concatenated_text, "image_base64": image_base64}
-
-    def _process_mmocr(self, image: Image.Image, use_cuda: bool):
-        """
-        Perform OCR on a single image using MMOCR and return the OCR text and the image.
-
-        Args:
-            image (Image.Image): Image to process.
-            use_cuda (bool): Whether to use CUDA for MMOCR.
-
-        Returns:
-            Dict: A dictionary with OCR text and the base64 encoded image.
-        """
-        
-        # Convert PIL Image to OpenCV format
-        open_cv_image = np.array(image) 
-        open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
-
-        # Perform OCR using MMOCR
-        result = self.mmocr_infer(open_cv_image, save_vis=False)
-        predictions = result['predictions']
-
-        # Extract texts and scores
-        texts = [pred['rec_texts'] for pred in predictions]
-        concatenated_texts = [' '.join(text) for text in texts]
-        full_text = ' '.join(concatenated_texts)
-
-        # Convert the original PIL image to base64 for returning
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        return {"ocr_text": full_text, "image_base64": image_base64}
-
+        return full_text
     
-    def _process_paddleocr(self, image: Image.Image, use_cuda: bool):
-        """
-        Perform OCR on a single image using PaddleOCR and return the OCR text and the image.
-
-        Args:
-            image (Image.Image): Image to process.
-            use_cuda (bool): Whether to use CUDA for PaddleOCR.
-
-        Returns:
-            Dict: A dictionary with OCR text and the base64 encoded image.
-        """
-
-        # Convert PIL Image to OpenCV format
-        open_cv_image = np.array(image) 
-        open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
-
-        # Perform OCR using PaddleOCR
-        result = self.paddleocr_model.ocr(open_cv_image, cls=False)
-
-        # Extract texts
-        texts = [line[1][0] for line in result]
-        concatenated_text = ' '.join(texts)
-
-        # Convert the original PIL image to base64 for returning
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        return {"ocr_text": concatenated_text, "image_base64": image_base64}
-
-    def _process_nougat(self, image: Image.Image, use_cuda: bool):
-        """
-        Perform OCR on a single image using Nougat and return the OCR text and the image.
-
-        Args:
-            image (Image.Image): Image to process.
-            use_cuda (bool): Whether to use CUDA for Nougat.
-
-        Returns:
-            Dict: A dictionary with OCR text and the base64 encoded image.
-        """
-
-        # Convert PIL Image to Tensor
-        pixel_values = self.processor(images=image, return_tensors="pt").pixel_values.to(self.device)
-
-        # Generate transcription using Nougat
-        outputs = self.model.generate(
-            pixel_values.to(self.device),
-            min_length=1,
-            max_length=3584,
-            bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
-            return_dict_in_generate=True,
-            output_scores=True,
-            stopping_criteria=StoppingCriteriaList([StoppingCriteriaScores()]),
-        )
-
-        sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
-        sequence = self.processor.post_process_generation(sequence, fix_markdown=False)
-
-        # Convert the original PIL image to base64 for returning
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-        return {"ocr_text": sequence, "image_base64": image_base64}
