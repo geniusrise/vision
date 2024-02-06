@@ -21,7 +21,7 @@ import torch
 # import transformers
 from geniusrise.core import BatchInput, BatchOutput, InMemoryState
 
-from geniusrise_vision.base.bulk import ImageBulk
+from geniusrise_vision.base.api import VisionAPI
 
 
 @pytest.fixture(
@@ -33,8 +33,10 @@ from geniusrise_vision.base.bulk import ImageBulk
         ("nateraw/vit-age-classifier", "AutoModel", "AutoProcessor", None, None, False),
         ("microsoft/resnet-50", "AutoModel", "AutoProcessor", None, None, False),
         ("nateraw/food", "AutoModel", "AutoProcessor", "auto", None, False),
-        ("nateraw/food", "AutoModel", "AutoProcessor", "auto", None, True),
-        ("google/vit-base-patch16-384", "AutoModel", "AutoProcessor", "auto", None, False),
+        ("nateraw/food", "AutoModel", "AutoProcessor", "cuda:0", None, True),
+        ("nateraw/food", "AutoModel", "AutoProcessor", "cuda:0", None, True),
+        ("nateraw/food", "AutoModel", "AutoProcessor","auto", None, True),
+        ("google/vit-base-patch16-384", "AutoModel", "AutoProcessor","auto", None, False),
         # fmt: on
     ]
 )
@@ -52,7 +54,7 @@ def hfa():
     output = BatchOutput(output_dir, "geniusrise-test", "api_output")
     state = InMemoryState()
 
-    hfa = ImageBulk(
+    hfa = VisionAPI(
         input=input,
         output=output,
         state=state,

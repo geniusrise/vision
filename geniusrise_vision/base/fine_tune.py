@@ -15,19 +15,16 @@
 
 import os
 from abc import abstractmethod
-from typing import Dict, Optional, List, Callable
-
+from typing import Callable, Dict, Optional
+from transformers import DefaultDataCollator
+from torch.utils.data.dataloader import default_collate
 import numpy as np
+import torch
 from datasets import Dataset, DatasetDict
 from geniusrise import BatchInput, BatchOutput, Bolt, State
-from sklearn.metrics import accuracy_score
-from transformers import EvalPrediction, Trainer, TrainingArguments, AutoConfig
-from accelerate import infer_auto_device_map, init_empty_weights
-from peft import LoraConfig, get_peft_model
-from trl import SFTTrainer
-import torch
 from geniusrise.logging import setup_logger
-from geniusrise_vision.base.util import TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
+from sklearn.metrics import accuracy_score
+from transformers import AutoConfig, EvalPrediction, Trainer, TrainingArguments
 
 
 class VisionFineTuner(Bolt):
@@ -63,7 +60,9 @@ class VisionFineTuner(Bolt):
         self.log = setup_logger(self)
 
     @abstractmethod
-    def load_dataset(self, dataset_path: str, **kwargs) -> Dataset | DatasetDict | Optional[Dataset]:
+    def load_dataset(
+        self, dataset_path: str, **kwargs
+    ) -> Dataset | DatasetDict | Optional[Dataset]:
         """
         Load a dataset from a file.
 
@@ -100,11 +99,6 @@ class VisionFineTuner(Bolt):
         model_class: str = "AutoModel",
         processor_class: str = "AutoProcessor",
         device_map: str | dict = "auto",
-        precision: str = "bfloat16",
-        quantization: Optional[int] = None,
-        lora_config: Optional[dict] = None,
-        use_accelerate: bool = False,
-        accelerate_no_split_module_classes: List[str] = [],
         **kwargs,
     ):
         """
@@ -116,11 +110,6 @@ class VisionFineTuner(Bolt):
             model_class (str, optional): The class of the model. Defaults to "AutoModel".
             processor_class (str, optional): The class of the processor. Defaults to "Autoprocessor".
             device (Union[str, torch.device], optional): The device to be used. Defaults to "cuda".
-            precision (str, optional): The precision to be used. Choose from 'float32', 'float16', 'bfloat16'. Defaults to "float32".
-            quantization (Optional[int], optional): The quantization to be used. Defaults to None.
-            lora_config (Optional[dict], optional): The LoRA configuration to be used. Defaults to None.
-            use_accelerate (bool, optional): Whether to use accelerate. Defaults to False.
-            accelerate_no_split_module_classes (List[str], optional): The list of no split module classes to be used. Defaults to [].
             **kwargs: Additional keyword arguments.
 
         Raises:
@@ -130,45 +119,6 @@ class VisionFineTuner(Bolt):
             None
         """
         try:
-            # Determine the torch dtype based on precision
-            if precision == "float32":
-                torch_dtype = torch.float32
-            elif precision == "float":
-                torch_dtype = torch.float
-            elif precision == "float64":
-                torch_dtype = torch.float64
-            elif precision == "double":
-                torch_dtype = torch.double
-            elif precision == "float16":
-                torch_dtype = torch.float16
-            elif precision == "bfloat16":
-                torch_dtype = torch.bfloat16
-            elif precision == "half":
-                torch_dtype = torch.half
-            elif precision == "uint8":
-                torch_dtype = torch.uint8
-            elif precision == "int8":
-                torch_dtype = torch.int8
-            elif precision == "int16":
-                torch_dtype = torch.int16
-            elif precision == "short":
-                torch_dtype = torch.short
-            elif precision == "int32":
-                torch_dtype = torch.int32
-            elif precision == "int":
-                torch_dtype = torch.int
-            elif precision == "int64":
-                torch_dtype = torch.int64
-            elif precision == "quint8":
-                torch_dtype = torch.quint8
-            elif precision == "qint8":
-                torch_dtype = torch.qint8
-            elif precision == "qint32":
-                torch_dtype = torch.qint32
-            else:
-                torch_dtype = None
-
-            peft_target_modules = []
             if ":" in model_name:
                 model_revision = model_name.split(":")[1]
                 model_name = model_name.split(":")[0]
@@ -177,141 +127,36 @@ class VisionFineTuner(Bolt):
             self.model_name = model_name
             self.log.info(f"Loading model {model_name} and branch {model_revision}")
 
-            with init_empty_weights():
-                model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                    model_name, revision=model_revision, device_map=device_map
+            # Use AutoConfig to automatically load the configuration
+            if self.model_name.lower() == "local":  # type: ignore
+                self.log.info(f"Loading local model {model_class} : {self.input.get()}")
+                self.config = AutoConfig.from_pretrained(
+                    os.path.join(self.input.get(), "/model")
                 )
-                known_targets = [
-                    v
-                    for k, v in TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING.items()
-                    if k.lower() in model_name.lower()
-                ]
-                if len(known_targets) > 0:
-                    peft_target_modules = known_targets[0]
-                else:
-                    # very generic strategy, may lead to VRAM usage explosion on the wrong model erasing all advantage
-                    for name, module in model.named_modules():
-                        if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d)) and "head" not in name:
-                            name = name.split(".")[-1]
-                            if name not in peft_target_modules:
-                                peft_target_modules.append(name)
-                self.log.info(f"Targeting these modules for PEFT: {peft_target_modules}")
-
-                if use_accelerate:
-                    if precision == "float16":
-                        device_map = infer_auto_device_map(
-                            model,
-                            dtype="float16",
-                            no_split_module_classes=accelerate_no_split_module_classes,
-                            **kwargs,
-                        )
-                    elif precision == "bfloat16":
-                        device_map = infer_auto_device_map(
-                            model,
-                            dtype="bfloat16",
-                            no_split_module_classes=accelerate_no_split_module_classes,
-                            **kwargs,
-                        )
-                    else:
-                        device_map = infer_auto_device_map(
-                            model,
-                            no_split_module_classes=accelerate_no_split_module_classes,
-                            **kwargs,
-                        )
-                    self.log.info(f"Inferred device map {device_map}")
-
-            if lora_config:
-                if len(peft_target_modules) > 0:
-                    lora_config = LoraConfig(target_modules=peft_target_modules, **lora_config)
-                else:
-                    lora_config = LoraConfig(**lora_config)
-                self.lora_config = lora_config
-            # you cannot fine-tune quantized models without LoRA
-            if quantization and not lora_config:
-                lora_config = {
-                    "r": 16,
-                    "lora_alpha": 32,
-                    "lora_dropout": 0.05,
-                    "bias": "none",
-                    "task_type": "CAUSAL_LM",
-                }
-                lora_config = LoraConfig(target_modules=peft_target_modules, **lora_config)
-            self.log.info(f"LoRA config: {lora_config}")
-
-            # Load model and processor
-            if quantization == 8:
-                # Use AutoConfig to automatically load the configuration
-                if self.model_name.lower() == "local":  # type: ignore
-                    self.log.info(f"Loading local model {model_class} : {self.input.get()}")
-                    self.config = AutoConfig.from_pretrained(os.path.join(self.input.get(), "/model"))
-                    self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                        os.path.join(self.input.get(), "/model"),
-                        device_map=device_map,
-                        torch_dtype=torch_dtype,
-                        load_in_8bit=True,
-                        config=self.config,
-                        **kwargs,
-                    )
-                else:
-                    self.log.info(f"Loading from huggingface hub: {model_class} : {model_name}")
-                    self.config = AutoConfig.from_pretrained(self.model_name)
-                    self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                        self.model_name,
-                        revision=model_revision,
-                        device_map=device_map,
-                        torch_dtype=torch_dtype,
-                        load_in_8bit=True,
-                        config=self.config,
-                        **kwargs,
-                    )
-            elif quantization == 4:
-                # Use AutoConfig to automatically load the configuration
-                if self.model_name.lower() == "local":  # type: ignore
-                    self.log.info(f"Loading local model {model_class} : {self.input.get()}")
-                    self.config = AutoConfig.from_pretrained(os.path.join(self.input.get(), "/model"))
-                    self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                        os.path.join(self.input.get(), "/model"),
-                        device_map=device_map,
-                        torch_dtype=torch_dtype,
-                        load_in_4bit=True,
-                        config=self.config,
-                        **kwargs,
-                    )
-                else:
-                    self.log.info(f"Loading from huggingface hub: {model_class} : {model_name}")
-                    self.config = AutoConfig.from_pretrained(self.model_name)
-                    self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                        self.model_name,
-                        revision=model_revision,
-                        device_map=device_map,
-                        torch_dtype=torch_dtype,
-                        load_in_4bit=True,
-                        config=self.config,
-                        **kwargs,
-                    )
+                self.model = getattr(
+                    __import__("transformers"), str(model_class)
+                ).from_pretrained(
+                    os.path.join(self.input.get(), "/model"),
+                    device_map=device_map,
+                    config=self.config,
+                    **kwargs,
+                )
             else:
-                # Use AutoConfig to automatically load the configuration
-                if self.model_name.lower() == "local":  # type: ignore
-                    self.log.info(f"Loading local model {model_class} : {self.input.get()}")
-                    self.config = AutoConfig.from_pretrained(os.path.join(self.input.get(), "/model"))
-                    self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                        os.path.join(self.input.get(), "/model"),
-                        device_map=device_map,
-                        torch_dtype=torch_dtype,
-                        config=self.config,
-                        **kwargs,
-                    )
-                else:
-                    self.log.info(f"Loading from huggingface hub: {model_class} : {model_name}")
-                    self.config = AutoConfig.from_pretrained(self.model_name)
-                    self.model = getattr(__import__("transformers"), str(model_class)).from_pretrained(
-                        model_name,
-                        revision=model_revision,
-                        device_map=device_map,
-                        torch_dtype=torch_dtype,
-                        config=self.config,
-                        **kwargs,
-                    )
+                self.log.info(
+                    f"Loading from huggingface hub: {model_class} : {model_name}"
+                )
+                self.config = AutoConfig.from_pretrained(self.model_name)
+                self.model = getattr(
+                    __import__("transformers"), str(model_class)
+                ).from_pretrained(
+                    model_name,
+                    revision=model_revision,
+                    device_map=device_map,
+                    config=self.config,
+                    **kwargs,
+                )
+
+            # Load processor
 
             if ":" in processor_name:
                 processor_revision = processor_name.split(":")[1]
@@ -321,15 +166,19 @@ class VisionFineTuner(Bolt):
             self.processor_name = processor_name
 
             if processor_name.lower() == "local":  # type: ignore
-                self.log.info(f"Loading local processor : {processor_class} : {self.input.get()}")
-                self.processor = getattr(__import__("transformers"), str(processor_class)).from_pretrained(
-                    os.path.join(self.input.get(), "/model")
+                self.log.info(
+                    f"Loading local processor : {processor_class} : {self.input.get()}"
                 )
+                self.processor = getattr(
+                    __import__("transformers"), str(processor_class)
+                ).from_pretrained(os.path.join(self.input.get(), "/model"))
             else:
-                self.log.info(f"Loading processor from huggingface hub: {processor_class} : {processor_name}")
-                self.processor = getattr(__import__("transformers"), str(processor_class)).from_pretrained(
-                    processor_name, revision=processor_revision
+                self.log.info(
+                    f"Loading processor from huggingface hub: {processor_class} : {processor_name}"
                 )
+                self.processor = getattr(
+                    __import__("transformers"), str(processor_class)
+                ).from_pretrained(processor_name, revision=processor_revision)
         except Exception as e:
             self.log.exception(f"Failed to load model: {e}")
             raise
@@ -347,7 +196,9 @@ class VisionFineTuner(Bolt):
             if self.model:
                 self.model.to("cpu").push_to_hub(
                     repo_id=hf_repo_id if hf_repo_id else self.hf_repo_id,
-                    commit_message=hf_commit_message if hf_commit_message else self.hf_commit_message,
+                    commit_message=hf_commit_message
+                    if hf_commit_message
+                    else self.hf_commit_message,
                     token=hf_token if hf_token else self.hf_token,
                     private=hf_private if hf_private else self.hf_private,
                     create_pr=hf_create_pr if hf_create_pr else self.hf_create_pr,
@@ -355,7 +206,9 @@ class VisionFineTuner(Bolt):
             if self.processor:
                 self.processor.push_to_hub(
                     repo_id=hf_repo_id if hf_repo_id else self.hf_repo_id,
-                    commit_message=hf_commit_message if hf_commit_message else self.hf_commit_message,
+                    commit_message=hf_commit_message
+                    if hf_commit_message
+                    else self.hf_commit_message,
                     token=hf_token if hf_token else self.hf_token,
                     private=hf_private if hf_private else self.hf_private,
                     create_pr=hf_create_pr if hf_create_pr else self.hf_create_pr,
@@ -380,6 +233,17 @@ class VisionFineTuner(Bolt):
             "accuracy": accuracy_score(labels, predictions),
         }
 
+    @staticmethod
+    def custom_vision_collator(batch):
+        # pixel_values = torch.stack([item[0] for item in batch])
+        
+        # # Check if each item in the batch has more than one element (i.e., includes a label)
+        # labels = torch.tensor([item[1] for item in batch]) if all(len(item) > 1 for item in batch) else None
+
+        # return {"pixel_values": pixel_values, "labels": labels}
+        return NotImplementedError("Subclasses should implement this!")
+
+
     def fine_tune(
         self,
         model_name: str,
@@ -387,14 +251,8 @@ class VisionFineTuner(Bolt):
         num_train_epochs: int,
         per_device_batch_size: int,
         model_class: str = "AutoModel",
-        processor_class: str = "Autoprocessor",
+        processor_class: str = "AutoProcessor",
         device_map: str | dict = "auto",
-        precision: str = "bfloat16",
-        quantization: Optional[int] = None,
-        lora_config: Optional[dict] = None,
-        use_accelerate: bool = False,
-        use_trl: bool = False,
-        accelerate_no_split_module_classes: List[str] = [],
         evaluate: bool = False,
         map_data: Optional[Callable] = None,
         hf_repo_id: Optional[str] = None,
@@ -415,12 +273,6 @@ class VisionFineTuner(Bolt):
             model_class (str, optional): The model class to use. Defaults to "AutoModel".
             processor_class (str, optional): The processor class to use. Defaults to "AutoProcessor".
             device_map (str | dict, optional): The device map for distributed training. Defaults to "auto".
-            precision (str, optional): The precision to use for training. Defaults to "bfloat16".
-            quantization (int, optional): The quantization level to use for training. Defaults to None.
-            lora_config (dict, optional): Configuration for PEFT LoRA optimization. Defaults to None.
-            use_accelerate (bool, optional): Whether to use accelerate for distributed training. Defaults to False.
-            use_trl (bool, optional): Whether to use TRL for training. Defaults to False.
-            accelerate_no_split_module_classes (List[str], optional): The module classes to not split during distributed training. Defaults to [].
             evaluate (bool, optional): Whether to evaluate the model after training. Defaults to False.
             map_data (Callable, optional): A function to map data before training. Defaults to None.
             hf_repo_id (str, optional): The Hugging Face repo ID. Defaults to None.
@@ -442,12 +294,6 @@ class VisionFineTuner(Bolt):
             self.model_class = model_class
             self.processor_class = processor_class
             self.device_map = device_map
-            self.precision = precision
-            self.quantization = quantization
-            self.lora_config = lora_config  # type: ignore
-            self.use_accelerate = use_accelerate
-            self.use_trl = use_trl
-            self.accelerate_no_split_module_classes = accelerate_no_split_module_classes
             self.evaluate = evaluate
             self.hf_repo_id = hf_repo_id
             self.hf_commit_message = hf_commit_message
@@ -456,7 +302,9 @@ class VisionFineTuner(Bolt):
             self.hf_create_pr = hf_create_pr
             self.map_data = map_data
 
-            model_kwargs = {k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k}
+            model_kwargs = {
+                k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k
+            }
 
             self.load_models(
                 model_name=self.model_name,
@@ -464,24 +312,26 @@ class VisionFineTuner(Bolt):
                 model_class=self.model_class,
                 processor_class=self.processor_class,
                 device_map=self.device_map,
-                precision=self.precision,
-                quantization=self.quantization,
-                lora_config=self.lora_config,
-                use_accelerate=self.use_accelerate,
-                accelerate_no_split_module_classes=self.accelerate_no_split_module_classes,
                 **model_kwargs,
             )
 
-            if self.processor and not self.processor.pad_token:
-                self.processor.pad_token = self.processor.eos_token
-
             # Load dataset
-            dataset_kwargs = {k.replace("data_", ""): v for k, v in kwargs.items() if "data_" in k}
+            dataset_kwargs = {
+                k.replace("data_", ""): v for k, v in kwargs.items() if "data_" in k
+            }
             self.preprocess_data(**dataset_kwargs)
 
             # Separate training and evaluation arguments
-            trainer_kwargs = {k.replace("trainer_", ""): v for k, v in kwargs.items() if "trainer_" in k}
-            training_kwargs = {k.replace("training_", ""): v for k, v in kwargs.items() if "training_" in k}
+            trainer_kwargs = {
+                k.replace("trainer_", ""): v
+                for k, v in kwargs.items()
+                if "trainer_" in k
+            }
+            training_kwargs = {
+                k.replace("training_", ""): v
+                for k, v in kwargs.items()
+                if "training_" in k
+            }
 
             # Create training arguments
             training_args = TrainingArguments(
@@ -489,38 +339,22 @@ class VisionFineTuner(Bolt):
                 num_train_epochs=num_train_epochs,
                 per_device_train_batch_size=per_device_batch_size,
                 per_device_eval_batch_size=per_device_batch_size,
+                metric_for_best_model="accuracy",
                 **training_kwargs,
             )
 
-            if self.lora_config and not use_trl:
-                self.model.enable_input_require_grads()
-                self.model = get_peft_model(self.model, peft_config=self.lora_config)
-
             # Create trainer
-            if use_trl:
-                self.model = get_peft_model(self.model, peft_config=self.lora_config)
-                trainer = SFTTrainer(
-                    model=self.model,
-                    args=training_args,
-                    train_dataset=self.train_dataset,
-                    eval_dataset=self.eval_dataset if self.evaluate else None,
-                    processor=self.processor,
-                    compute_metrics=self.compute_metrics,
-                    data_collator=self.data_collator if hasattr(self, "data_collator") else None,
-                    peft_config=self.lora_config,
-                    **trainer_kwargs,
-                )
-            else:
-                trainer = Trainer(
-                    model=self.model,
-                    args=training_args,
-                    train_dataset=self.train_dataset,
-                    eval_dataset=self.eval_dataset if self.evaluate else None,
-                    processor=self.processor,
-                    compute_metrics=self.compute_metrics,
-                    data_collator=self.data_collator if hasattr(self, "data_collator") else None,
-                    **trainer_kwargs,
-                )
+
+            trainer = Trainer(
+                model=self.model,
+                args=training_args,
+                train_dataset=self.train_dataset,
+                eval_dataset=self.eval_dataset if self.evaluate else None,
+                compute_metrics=self.compute_metrics,
+                data_collator=self.custom_vision_collator,
+                tokenizer=self.processor,
+                **trainer_kwargs,
+            )
 
             # Train the model
             trainer.train()
@@ -532,8 +366,11 @@ class VisionFineTuner(Bolt):
 
             # Save the model configuration to Hugging Face Hub if hf_repo_id is not None
             if self.hf_repo_id:
-                self.config.save_pretrained(os.path.join(self.output.output_folder, "model"))
+                self.config.save_pretrained(
+                    os.path.join(self.output.output_folder, "model")
+                )
                 self.upload_to_hf_hub()
+
         except Exception as e:
             self.log.exception(f"Failed to fine tune model: {e}")
             self.state.set_state(self.id, {"success": False, "exception": str(e)})
