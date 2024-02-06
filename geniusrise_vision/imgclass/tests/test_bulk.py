@@ -82,4 +82,3 @@ def test_prediction_file_creation_and_content(image_classification_bulk, image_d
         predictions = json.load(file)
         assert isinstance(predictions, list), "Predictions file should contain a list."
         assert len(predictions) > 0, "Prediction list is empty."
-

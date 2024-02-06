@@ -19,27 +19,48 @@ from geniusrise_vision.base import VisionAPI
 import io
 import logging
 import cherrypy
+import numpy as np
+import json
 import torch
 import base64
 from PIL import Image
-from transformers import AutoModelForImageClassification, AutoProcessor
+from transformers import AutoModelForImageClassification, AutoImageProcessor
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 class VisionClassificationAPI(VisionAPI):
-    def __init__(self, model_name, input: BatchInput, output: BatchOutput, state: State):
+    def __init__(self, model_name: str, input: BatchInput, output: BatchOutput, state: State):
         """
         Initialize the API with a specified model.
         """
         super().__init__(input=input, output=output, state=state)
-         # Initialize model and processor
-        self.model = AutoModelForImageClassification.from_pretrained(model_name)
-        self.processor = AutoProcessor.from_pretrained(model_name)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(self.device)
-        log.info("Model and processor are initialized. API is ready to serve requests.")
+        self.initialize_model(model_name)
+
+    def initialize_model(
+        self, 
+        model_name: str = None):
+        try:
+            self.model_name = model_name
+            # Initialize model and processor
+            self.model = AutoModelForImageClassification.from_pretrained(model_name)
+            self.processor = AutoImageProcessor.from_pretrained(model_name)
+            self.model.to(self.device)
+            log.info("Model and processor are initialized. API is ready to serve requests.")
+        except Exception as e:
+            return {"success": False, "error": str(e)}  
+
+    # Copied from transformers.pipelines.text_classification.sigmoid
+    def sigmoid(self, _outputs):
+        return 1.0 / (1.0 + np.exp(-_outputs))
+
+    # Copied from transformers.pipelines.text_classification.softmax
+    def softmax(self, _outputs):
+        maxes = np.max(_outputs, axis=-1, keepdims=True)
+        shifted_exp = np.exp(_outputs - maxes)
+        return shifted_exp / shifted_exp.sum(axis=-1, keepdims=True)
 
     @cherrypy.expose
     @cherrypy.tools.json_in()
@@ -50,36 +71,33 @@ class VisionClassificationAPI(VisionAPI):
         Endpoint for classifying an image and returning the image with label scores.
         """
         try:
-            # Retrieve and process the image from the request
-            uploaded_file = cherrypy.request.body.fp
-            with Image.open(io.BytesIO(uploaded_file.read())).convert("RGB") as image:
-                # Encode original image to base64 for JSON response
-                buffered = io.BytesIO()
-                image.save(buffered, format="JPEG")
-                img_base64 = base64.b64encode(buffered.getvalue()).decode()
+            data = cherrypy.request.json
+            image_base64 = data.get("image_base64", "")
+            image_bytes = base64.b64decode(image_base64)
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-                # Preprocess the image
-                inputs = self.processor(images=image, return_tensors="pt")
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            # Preprocess the image
+            inputs = self.processor(images=image, return_tensors="pt")
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-                # Perform inference
-                with torch.no_grad():
-                    outputs = self.model(**inputs)
-                    logits = outputs.logits
-                    probabilities = torch.nn.functional.softmax(logits, dim=-1)
+            # Perform inference
+            with torch.no_grad():
+                outputs = self.model(**inputs).logits
+                outputs = outputs.numpy()
 
-                # Convert results to readable format
-                probabilities = probabilities.cpu().numpy().tolist()[0]
-                labels = self.model.config.id2label
-                label_scores = {labels[i]: prob for i, prob in enumerate(probabilities)}
+            if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
+                scores = self.sigmoid(outputs)
+            elif self.model.config.problem_type == "single_label_classification" or self.model.config.num_labels > 1:
+                scores = self.softmax(outputs)
+            else:
+                scores = outputs  # No function applied
 
-                # Combine image and label scores in JSON response
-                response = {
-                    "original_image": img_base64,
-                    "label_scores": label_scores
-                }
+            # Prepare scores and labels for the response
+            labeled_scores = [{"label": self.model.config.id2label[i], "score": float(score)} for i, score in enumerate(scores.flatten())]
 
-                return response
+            response = {"original_image": image_base64, "predictions": labeled_scores}
+
+            return response
 
         except Exception as e:
             log.error(f"Error processing image: {e}")
