@@ -52,7 +52,7 @@ def mock_images(tmp_path):
     return image_paths, expected_texts
 
 # Adjust the path to your specific folder
-IMAGE_FOLDER = 'test_images'
+IMAGE_FOLDER = 'test_images_ocr'
 
 @pytest.fixture
 def folder_images():
@@ -75,30 +75,55 @@ def ocr_bulk(tmpdir):
         input=BatchInput(input_dir, "geniusrise-test", "test-🤗-input"),
         output=BatchOutput(output_dir, "geniusrise-test", "test-🤗-output"),
         state=state,
+        use_cuda=False, 
+        batch_size=2,
     )
 
     return ocr_bulk_instance
 
-OCR_ENGINES = ["trocr"]
+MODELS_TO_TEST = {
+    "easyocr": {"model_name": "easyocr", "model_type": "other", "use_easyocr_bbox": False},
+    "mmocr": {"model_name": "mmocr", "model_type": "other", "use_easyocr_bbox": False},
+    "paddleocr": {"model_name": "paddleocr", "model_type": "other", "use_easyocr_bbox": False},
+#    "hf_trocr": {"model_name": "facebook/trocr-large", "model_type": "hf", "kind": "printed", "use_easyocr_bbox": True},
+}
 
-@pytest.mark.parametrize("ocr_engine", OCR_ENGINES)
-def test_ocr_process(ocr_bulk, mock_images, ocr_engine):
+@pytest.mark.parametrize("ocr_engine_name, ocr_engine_config", MODELS_TO_TEST.items())
+def test_ocr_process(ocr_bulk, mock_images, ocr_engine_name, ocr_engine_config):
     image_paths, expected_texts = mock_images
+
+    # Extract configuration for the current OCR engine
+    model_name = ocr_engine_config['model_name']
+    model_type = ocr_engine_config['model_type']
+    kind = ocr_engine_config.get('kind')
+    use_easyocr_bbox = ocr_engine_config['use_easyocr_bbox']
+
+    # Update the OCR engine for the test
+    ocr_bulk.initialize_model(model_name=model_name, model_type=model_type, kind=kind, use_easyocr_bbox=use_easyocr_bbox)
 
     # Move mock images to the input folder
     for img_path in image_paths:
         os.rename(img_path, os.path.join(ocr_bulk.input.input_folder, img_path.name))
 
     # Run the OCR process for each engine
-    ocr_bulk.process(kind="printed", use_cuda=False, ocr_engine=ocr_engine)
+    ocr_bulk.process()
 
     # Verify the creation of output files
     prediction_files = os.listdir(ocr_bulk.output.output_folder)
     assert len(prediction_files) > 0, f"No OCR output files found for {ocr_engine}."
 
-@pytest.mark.parametrize("ocr_engine", OCR_ENGINES)
-def test_ocr_process_with_test_images(ocr_bulk, folder_images, ocr_engine):
+@pytest.mark.parametrize("ocr_engine_name, ocr_engine_config", MODELS_TO_TEST.items())
+def test_ocr_process_with_test_images(ocr_bulk, ocr_engine_name, ocr_engine_config, folder_images):
     image_paths = folder_images
+
+    # Extract configuration for the current OCR engine
+    model_name = ocr_engine_config['model_name']
+    model_type = ocr_engine_config['model_type']
+    kind = ocr_engine_config.get('kind')
+    use_easyocr_bbox = ocr_engine_config['use_easyocr_bbox']
+
+    # Update the OCR engine for the test
+    ocr_bulk.initialize_model(model_name=model_name, model_type=model_type, kind=kind, use_easyocr_bbox=use_easyocr_bbox)
 
     # Move mock images to the input folder
     for img_path in image_paths:
@@ -106,26 +131,8 @@ def test_ocr_process_with_test_images(ocr_bulk, folder_images, ocr_engine):
         shutil.copy(img_path, destination_path)
 
     # Run the OCR process for each engine
-    ocr_bulk.process(kind="printed", use_cuda=False, ocr_engine=ocr_engine)
+    ocr_bulk.process()
 
     # Verify the creation of output files
     prediction_files = os.listdir(ocr_bulk.output.output_folder)
     assert len(prediction_files) > 0, f"No OCR output files found for {ocr_engine}."
-
-
-# @pytest.mark.parametrize("ocr_engine", OCR_ENGINES)
-# def test_ocr_process_with_handwritten(ocr_bulk, folder_images, ocr_engine):
-#     image_paths = folder_images
-
-#     # Move mock images to the input folder
-#     for img_path in image_paths:
-#         destination_path = os.path.join(ocr_bulk.input.input_folder, os.path.basename(img_path))
-#         shutil.copy(img_path, destination_path)
-
-#     # Run the OCR process for each engine
-#     ocr_bulk.process(kind="handwritten", use_cuda=False, ocr_engine=ocr_engine)
-
-#     # Verify the creation of output files
-#     prediction_files = os.listdir(ocr_bulk.output.output_folder)
-#     assert len(prediction_files) > 0, f"No OCR output files found for {ocr_engine}."
-
