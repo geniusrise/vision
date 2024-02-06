@@ -24,11 +24,17 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import os
 import torch
+import numpy as np
 import json
 import torch.nn as nn
 import glob
 from PIL import Image
 import pandas as pd
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('VisionClassificationBulk')
 
 
 class VisionClassificationBulk(ImageBulk):
@@ -45,6 +51,7 @@ class VisionClassificationBulk(ImageBulk):
         **kwargs) -> None:
 
         super().__init__(input, output, state, **kwargs)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def load_dataset(
         self,
@@ -71,8 +78,7 @@ class VisionClassificationBulk(ImageBulk):
         elif hf_dataset:
             return load_dataset(hf_dataset, **kwargs)
         else:
-            raise ValueError("Either 'dataset_path' or 'hf_dataset' must be provided")
-        
+            raise ValueError("Either 'dataset_path' or 'hf_dataset' must be provided")   
 
 
     def _load_local_dataset(self, dataset_path: str, image_size: Tuple[int, int] = (224, 224)) -> Dataset:
@@ -115,6 +121,18 @@ class VisionClassificationBulk(ImageBulk):
 
         # Convert lists to PyTorch Dataset
         return Dataset.from_dict({"image": images, "path": paths})
+
+    
+    # Copied from transformers.pipelines.text_classification.sigmoid
+    def sigmoid(self, _outputs):
+        return 1.0 / (1.0 + np.exp(-_outputs))
+
+
+    # Copied from transformers.pipelines.text_classification.softmax
+    def softmax(self, _outputs):
+        maxes = np.max(_outputs, axis=-1, keepdims=True)
+        shifted_exp = np.exp(_outputs - maxes)
+        return shifted_exp / shifted_exp.sum(axis=-1, keepdims=True)
 
     def classify(
         self, 
@@ -189,34 +207,48 @@ class VisionClassificationBulk(ImageBulk):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Process and classify in batches
-        for batch_idx in range(0, len(dataset), batch_size):
-            batch = dataset[batch_idx:batch_idx + batch_size]
-            image_tensors = batch['image']
+        for batch_idx in range(0, len(dataset['image']), batch_size):
 
-            # Convert each list of pixel values to a tensor
-            tensor_batch = [torch.tensor(image).float() for image in image_tensors]
+            batch_images = dataset['image'][batch_idx:batch_idx + batch_size]
+            batch_paths = dataset['path'][batch_idx:batch_idx + batch_size]
+            logger.info(f"Batch Path: {batch_paths}")
 
-            # Stack the tensors
-            inputs = torch.stack(tensor_batch).to(device)
-                    
-            with torch.no_grad():
-                outputs = self.model(inputs)
-                logits = outputs.logits if hasattr(outputs, 'logits') else outputs[0]
-                predictions = torch.argmax(logits, dim=-1).cpu().numpy()
+            for img_path in batch_paths:
+                image = Image.open(img_path)
+                logger.info(f"Image Path: {img_path}")
+                # Preprocess the image
+                inputs = self.processor(images=image, return_tensors="pt")
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                        
+                with torch.no_grad():
+                    outputs = self.model(**inputs).logits
+                    outputs = outputs.numpy()
+
+                if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
+                    scores = self.sigmoid(outputs)
+                elif self.model.config.problem_type == "single_label_classification" or self.model.config.num_labels > 1:
+                    scores = self.softmax(outputs)
+                else:
+                    scores = outputs  # No function applied
+
+                print(scores)
+
+                # Prepare scores and labels for the response
+                labeled_scores = [{"label": self.model.config.id2label[i], "score": float(score)} for i, score in enumerate(scores.flatten())]
+                
+                self._save_predictions(labeled_scores, img_path, self.output.output_folder, batch_idx)
             
-            self._save_predictions(predictions, batch, self.output.output_folder, batch_idx)
-
     def _save_predictions(
         self, 
-        predictions: torch.Tensor,
-        batch: List[str], 
+        labeled_scores,
+        img_path,
         output_path: str, 
         batch_index) -> None:
-        # Convert predictions to labels
-        labels = [self.model.config.id2label[prediction.item()] for prediction in predictions]
 
-        # Create a list of dictionaries with image paths and their corresponding predictions
-        results = [{"image_path": image_path, "prediction": label} for image_path, label in zip(batch, labels)]
+        results = [{
+        "image_path": img_path,
+        "predictions": labeled_scores
+        }]
 
         # Save to JSON
         file_name = os.path.join(output_path, f"predictions_batch_{batch_index}.json")
