@@ -15,14 +15,10 @@
 
 from typing import Any, Dict, Optional, Tuple
 
-import torch
 import transformers
 from geniusrise import BatchInput, BatchOutput, Bolt, State
 from geniusrise.logging import setup_logger
-from transformers import (
-    Autoprocessor,
-    AutoModelForCausalLM,
-)
+from transformers import AutoModel, AutoProcessor
 
 
 class ImageBulk(Bolt):
@@ -79,14 +75,11 @@ class ImageBulk(Bolt):
         processor_revision: Optional[str] = None,
         model_class: str = "AutoModel",
         processor_class: str = "AutoProcessor",
-        use_cuda: bool = False,
-        precision: str = "float16",
-        quantization: int = 0,
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
         torchscript: bool = True,
         **model_args: Any,
-    ) -> Tuple[AutoModelForCausalLM, Autoprocessor]:
+    ) -> Tuple[AutoModel, AutoProcessor]:
         """
         Loads the model and processor necessary for image processing tasks.
 
@@ -97,7 +90,6 @@ class ImageBulk(Bolt):
             processor_revision (Optional[str]): The specific revision of the processor to be loaded.
             model_class (str): The class name of the model to be loaded from the transformers package.
             processor_class (str): The class name of the processor to be loaded.
-            use_cuda (bool): Whether to load the model on CUDA-enabled devices.
             precision (str): The floating-point precision to be used by the model. Options are 'float32', 'float16', 'bfloat16'.
             quantization (int): The level of model quantization for memory optimization. Options are 0, 8, 4.
             device_map (Union[str, Dict, None]): The device mapping for model parallelism. 'auto' or specific mapping dict.
@@ -106,7 +98,7 @@ class ImageBulk(Bolt):
             **model_args (Any): Additional arguments to be passed to the model's 'from_pretrained' method.
 
         Returns:
-            Tuple[AutoModelForCausalLM, Autoprocessor]: A tuple containing the loaded model and processor.
+            Tuple[AutoModelForCausalLM, AutoProcessor]: A tuple containing the loaded model and processor.
 
         Raises:
             ValueError: If an unsupported precision is specified.
@@ -117,56 +109,26 @@ class ImageBulk(Bolt):
         """
         self.log.info(f"Loading Hugging Face model: {model_name}")
 
-        # Determine the torch dtype based on precision
-        if precision == "float16":
-            torch_dtype = torch.float16
-        elif precision == "float32":
-            torch_dtype = torch.float32
-        elif precision == "bfloat16":
-            torch_dtype = torch.bfloat16
-        else:
-            raise ValueError("Unsupported precision. Choose from 'float32', 'float16', 'bfloat16'.")
-
-        if use_cuda and not device_map:
-            device_map = "auto"
-
         ModelClass = getattr(transformers, model_class)
-        ProcessorClass = getattr(transformers, processor_class)
+        processorClass = getattr(transformers, processor_class)
 
         # Load the model and processor
-        processor = ProcessorClass.from_pretrained(processor_name, revision=processor_revision, torch_dtype=torch_dtype)
+        processor = processorClass.from_pretrained(
+            processor_name, revision=processor_revision
+        )
 
-        self.log.info(f"Loading model from {model_name} {model_revision} with {model_args}")
-        if quantization == 8:
-            model = ModelClass.from_pretrained(
-                model_name,
-                revision=model_revision,
-                torchscript=torchscript,
-                max_memory=max_memory,
-                device_map=device_map,
-                load_in_8bit=True,
-                **model_args,
-            )
-        elif quantization == 4:
-            model = ModelClass.from_pretrained(
-                model_name,
-                revision=model_revision,
-                torchscript=torchscript,
-                max_memory=max_memory,
-                device_map=device_map,
-                load_in_4bit=True,
-                **model_args,
-            )
-        else:
-            model = ModelClass.from_pretrained(
-                model_name,
-                revision=model_revision,
-                torch_dtype=torch_dtype,
-                torchscript=torchscript,
-                max_memory=max_memory,
-                device_map=device_map,
-                **model_args,
-            )
+        self.log.info(
+            f"Loading model from {model_name} {model_revision} with {model_args}"
+        )
+
+        model = ModelClass.from_pretrained(
+            model_name,
+            revision=model_revision,
+            torchscript=torchscript,
+            max_memory=max_memory,
+            device_map=device_map,
+            **model_args,
+        )
 
         # Set to evaluation mode for inference
         model.eval()
