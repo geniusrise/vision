@@ -89,6 +89,7 @@ class VisionAPI(VisionBulk):
         torchscript: bool = False,
         compile: bool = False,
         flash_attention: bool = False,
+        better_transformers: bool = False,
         endpoint: str = "*",
         port: int = 3000,
         cors_domain: str = "http://localhost:3000",
@@ -108,6 +109,7 @@ class VisionAPI(VisionBulk):
             torchscript (bool, optional): Whether to use TorchScript for model optimization. Defaults to True.
             compile (bool, optional): Whether to compile the model before fine-tuning. Defaults to False.
             flash_attention (bool): Whether to use flash attention 2. Default is False.
+            better_transformers (bool): Flag to enable Better Transformers optimization for faster processing.
             endpoint (str, optional): The network endpoint for the server. Defaults to "*".
             port (int, optional): The network port for the server. Defaults to 3000.
             cors_domain (str, optional): The domain to allow for CORS requests. Defaults to "http://localhost:3000".
@@ -123,6 +125,7 @@ class VisionAPI(VisionBulk):
         self.torchscript = torchscript
         self.compile = compile
         self.flash_attention = flash_attention
+        self.better_transformers = better_transformers
         self.model_args = model_args
         self.username = username
         self.password = password
@@ -156,6 +159,7 @@ class VisionAPI(VisionBulk):
             torchscript=self.torchscript,
             compile=self.compile,
             flash_attention=self.flash_attention,
+            better_transformer=self.better_transformers,
             **self.model_args,
         )
 
