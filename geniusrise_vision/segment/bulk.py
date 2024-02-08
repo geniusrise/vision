@@ -21,22 +21,13 @@ import numpy as np
 from PIL import Image
 from datasets import load_dataset
 from geniusrise import BatchInput, BatchOutput, State
-from geniusrise_vision.base.bulk import ImageBulk
-from torchvision.transforms import transforms
-from transformers import AutoModelForSemanticSegmentation, AutoImageProcessor
-from torch.utils.data import DataLoader
-from collections import defaultdict
+from geniusrise_vision.base.bulk import VisionBulk
 from datasets import Dataset, DatasetDict
 from typing import Dict, Optional, Union, List, Tuple
 
 
-class VisionSegmentationBulk(ImageBulk):  
-    def __init__(
-        self, 
-        input: BatchInput, 
-        output: BatchOutput, 
-        state: State, 
-        **kwargs) -> None:
+class VisionSegmentationBulk(VisionBulk):
+    def __init__(self, input: BatchInput, output: BatchOutput, state: State, **kwargs) -> None:
 
         super().__init__(input, output, state, **kwargs)
 
@@ -55,7 +46,7 @@ class VisionSegmentationBulk(ImageBulk):
 
     def _load_local_dataset(self, dataset_path: str, image_size: Tuple[int, int] = (224, 224)) -> Dataset:
         # Supported image formats
-        supported_formats = ['.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.tif']
+        supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif"]
 
         # List of all image file paths in the dataset directory
         image_files = [f for f in os.listdir(dataset_path) if os.path.splitext(f)[1].lower() in supported_formats]
@@ -66,7 +57,7 @@ class VisionSegmentationBulk(ImageBulk):
         for image_file in image_files:
             image_path = os.path.join(dataset_path, image_file)
             try:
-                with Image.open(image_path).convert('RGB') as img:
+                with Image.open(image_path).convert("RGB") as img:
                     images.append(img)
                 paths.append(image_path)
             except Exception as e:
@@ -76,19 +67,20 @@ class VisionSegmentationBulk(ImageBulk):
         return Dataset.from_dict({"image": images, "path": paths})
 
     def segment(
-        self, 
-        model_name, 
+        self,
+        model_name,
         model_class: str = "AutoModelForSemanticSegmentation",
         processor_class: str = "AutoImageProcessor",
         device_map: str | Dict | None = "auto",
-        max_memory=None, 
-        torchscript=False, 
+        max_memory=None,
+        torchscript=False,
         batch_size=32,
-        subtask:  str = "semantic",
+        subtask: str = "semantic",
         threshold=0.5,
         mask_threshold=0.3,
         overlap_mask_area_threshold=0.2,
-        **kwargs) -> None:
+        **kwargs,
+    ) -> None:
         """
         Segments vision data using a specified Hugging Face model.
 
@@ -111,7 +103,7 @@ class VisionSegmentationBulk(ImageBulk):
             model_revision = None
             processor_revision = None
             processor_name = model_name
-        
+
         # Load model
         self.model_name = model_name
         self.processor_name = processor_name
@@ -153,9 +145,9 @@ class VisionSegmentationBulk(ImageBulk):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Process and classify in batches
-        for batch_idx in range(0, len(dataset['image']), batch_size):
-            batch_images = dataset['image'][batch_idx:batch_idx + batch_size]
-            batch_paths = dataset['path'][batch_idx:batch_idx + batch_size]
+        for batch_idx in range(0, len(dataset["image"]), batch_size):
+            batch_images = dataset["image"][batch_idx : batch_idx + batch_size]
+            batch_paths = dataset["path"][batch_idx : batch_idx + batch_size]
 
             for image, image_path in zip(batch_images, batch_paths):
                 target_size = [(image.height, image.width)]
@@ -181,9 +173,13 @@ class VisionSegmentationBulk(ImageBulk):
                     model_outputs["target_size"] = target_size
 
                     fn = None
-                    if self.subtask in {"panoptic", None} and hasattr(self.processor, "post_process_panoptic_segmentation"):
+                    if self.subtask in {"panoptic", None} and hasattr(
+                        self.processor, "post_process_panoptic_segmentation"
+                    ):
                         fn = self.processor.post_process_panoptic_segmentation
-                    elif self.subtask in {"instance", None} and hasattr(self.processor, "post_process_instance_segmentation"):
+                    elif self.subtask in {"instance", None} and hasattr(
+                        self.processor, "post_process_instance_segmentation"
+                    ):
                         fn = self.processor.post_process_instance_segmentation
 
                     if fn is not None:
@@ -199,7 +195,7 @@ class VisionSegmentationBulk(ImageBulk):
                         segmentation = outputs["segmentation"]
 
                         for segment in outputs["segments_info"]:
-                            mask = (segmentation == segment["id"])
+                            mask = segmentation == segment["id"]
                             mask_indices = np.argwhere(mask.cpu().numpy())
 
                             # Transpose the mask_indices to separate x and y coordinates
@@ -207,15 +203,19 @@ class VisionSegmentationBulk(ImageBulk):
                             # Pair the x and y coordinates
                             paired_coordinates = zip(x_coordinates, y_coordinates)
                             # Format each pair of coordinates as a string and join them
-                            mask_value = ', '.join([f"({x},{y})" for x, y in paired_coordinates])
-                            
+                            mask_value = ", ".join([f"({x},{y})" for x, y in paired_coordinates])
+
                             mask = (segmentation == segment["id"]) * 255
                             mask_img = Image.fromarray(mask.numpy().astype(np.uint8), mode="L")
                             label = self.model.config.id2label[segment["label_id"]]
                             score = segment["score"]
-                            annotation.append({"score": score, "label": label, "mask_value": mask_value, "mask_img": mask_img})
+                            annotation.append(
+                                {"score": score, "label": label, "mask_value": mask_value, "mask_img": mask_img}
+                            )
 
-                    elif subtask in {"semantic", None} and hasattr(self.processor, "post_process_semantic_segmentation"):
+                    elif subtask in {"semantic", None} and hasattr(
+                        self.processor, "post_process_semantic_segmentation"
+                    ):
                         outputs = self.processor.post_process_semantic_segmentation(
                             model_outputs, target_sizes=model_outputs["target_size"]
                         )[0]
@@ -225,24 +225,25 @@ class VisionSegmentationBulk(ImageBulk):
                         labels = np.unique(segmentation)
 
                         for label in labels:
-                            mask = (segmentation == label)
+                            mask = segmentation == label
                             mask_value = np.argwhere(mask)
-                           # Format each pair of coordinates as a string and join them
-                            mask_value = ', '.join([f"({x},{y})" for x, y in mask_value])
+                            # Format each pair of coordinates as a string and join them
+                            mask_value = ", ".join([f"({x},{y})" for x, y in mask_value])
                             mask = (segmentation == label) * 255
                             mask_img = Image.fromarray(mask.astype(np.uint8), mode="L")
                             label = self.model.config.id2label[label]
-                            annotation.append({"score": None, "label": label, "mask_value": mask_value, "mask_img": mask_img})
+                            annotation.append(
+                                {"score": None, "label": label, "mask_value": mask_value, "mask_img": mask_img}
+                            )
                     else:
                         raise ValueError(f"Subtask {subtask} is not supported for model {type(self.model)}")
-            
+
                     self._save_annotations(annotation, image_path, self.output.output_folder)
 
-
     def _save_annotations(
-        self, 
+        self,
         annotations: List[Dict[str, any]],
-        image_path: str,  
+        image_path: str,
         output_path: str,
     ) -> None:
         """
@@ -255,7 +256,7 @@ class VisionSegmentationBulk(ImageBulk):
         """
 
         # Directory to save masks for this image
-        image_dir = os.path.join(output_path, os.path.basename(image_path).split('.')[0])
+        image_dir = os.path.join(output_path, os.path.basename(image_path).split(".")[0])
         os.makedirs(image_dir, exist_ok=True)
 
         # Prepare data structure for JSON
@@ -267,13 +268,11 @@ class VisionSegmentationBulk(ImageBulk):
             mask_img.save(os.path.join(image_dir, f"mask_{i}.png"))
 
             # Append annotation data
-            annotation_data.append({
-                "score": annotation["score"],
-                "label": annotation["label"],
-                "mask_value": annotation["mask_value"]
-            })
+            annotation_data.append(
+                {"score": annotation["score"], "label": annotation["label"], "mask_value": annotation["mask_value"]}
+            )
 
         # Save annotation data as JSON
         json_path = os.path.join(image_dir, "annotations.json")
-        with open(json_path, 'w') as json_file:
+        with open(json_path, "w") as json_file:
             json.dump(annotation_data, json_file, indent=4)

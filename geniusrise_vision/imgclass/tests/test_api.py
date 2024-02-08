@@ -24,23 +24,25 @@ from unittest.mock import patch, MagicMock
 from PIL import Image
 from PIL import Image, ImageDraw, ImageFont
 from geniusrise import BatchInput, BatchOutput, InMemoryState, State
-from geniusrise_vision.imgclass.api import VisionClassificationAPI 
+from geniusrise_vision.imgclass.api import ImageClassificationAPI
 from transformers import AutoModelForImageClassification, AutoProcessor
+
 
 # Fixtures
 @pytest.fixture
 def base64_test_image():
     # Create an image with random text
-    img = Image.new('RGB', (384, 384), color='white')
+    img = Image.new("RGB", (384, 384), color="white")
     draw = ImageDraw.Draw(img)
-    text = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
-    draw.text((10, 10), text, fill='black')
+    text = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+    draw.text((10, 10), text, fill="black")
 
     # Convert the image to a Base64 string
     img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='JPEG')
+    img.save(img_byte_arr, format="JPEG")
     img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode()
     return img_base64
+
 
 @pytest.fixture
 def api_instance():
@@ -48,9 +50,10 @@ def api_instance():
     output = MagicMock(spec=BatchOutput)
     state = MagicMock(spec=InMemoryState)
 
-    api = VisionClassificationAPI("microsoft/resnet-50", input, output, state)
+    api = ImageClassificationAPI("microsoft/resnet-50", input, output, state)
 
     return api
+
 
 # Test for correct classification output
 def test_classification_output(api_instance, base64_test_image):
@@ -62,15 +65,16 @@ def test_classification_output(api_instance, base64_test_image):
     response = api_instance.classify_image()
 
     # Check if there is a 'label_scores' key in the response
-    assert 'predictions' in response, "No label_scores in the response"
+    assert "predictions" in response, "No label_scores in the response"
 
     # Check if the label_scores dictionary is not empty
-    assert response['predictions'], "The label_scores dictionary is empty"
+    assert response["predictions"], "The label_scores dictionary is empty"
 
-# Test to check for invalid image output 
+
+# Test to check for invalid image output
 def test_invalid_image_input(api_instance):
     # Create an invalid image input
-    invalid_image = b'notanimage'
+    invalid_image = b"notanimage"
 
     # Mock CherryPy request
     cherrypy.request = MagicMock()
@@ -80,7 +84,7 @@ def test_invalid_image_input(api_instance):
     response = api_instance.classify_image()
 
     # Check if the response indicates an error
-    assert 'error' in response, "No error indicated for invalid image input"
+    assert "error" in response, "No error indicated for invalid image input"
 
 
 def test_response_structure(api_instance, base64_test_image):
@@ -93,15 +97,15 @@ def test_response_structure(api_instance, base64_test_image):
 
     # Check response structure
     assert isinstance(response, dict), "Response is not a dictionary"
-    assert 'original_image' in response, "No original_image in the response"
-    assert 'predictions' in response, "No label_scores in the response"
+    assert "original_image" in response, "No original_image in the response"
+    assert "predictions" in response, "No label_scores in the response"
 
 
 def test_large_image_input(api_instance):
     # Create a large image for testing
-    large_img = Image.new('RGB', (4000, 4000), color='blue')
+    large_img = Image.new("RGB", (4000, 4000), color="blue")
     img_byte_arr = io.BytesIO()
-    large_img.save(img_byte_arr, format='JPEG')
+    large_img.save(img_byte_arr, format="JPEG")
     img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode()
 
     # Mock CherryPy request
@@ -113,5 +117,5 @@ def test_large_image_input(api_instance):
 
     # Check if the API can handle large images
     assert isinstance(response, dict), "Response is not a dictionary"
-    assert 'original_image' in response, "No original_image in the response"
-    assert 'predictions' in response, "API failed to handle large image"
+    assert "original_image" in response, "No original_image in the response"
+    assert "predictions" in response, "API failed to handle large image"
