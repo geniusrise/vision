@@ -86,6 +86,8 @@ class VisionAPI(VisionBulk):
         processor_class: str = "AutoProcessor",
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
+        precision: str = "float16",
+        quantization: int = 0,
         torchscript: bool = False,
         compile: bool = False,
         flash_attention: bool = False,
@@ -106,6 +108,8 @@ class VisionAPI(VisionBulk):
             processor_class (str, optional): The class of the processor for input image preprocessing. Defaults to "AutoProcessor".
             device_map (str | Dict | None, optional): Device mapping for model inference. Defaults to "auto".
             max_memory (Dict[int, str], optional): Maximum memory allocation for model inference. Defaults to {0: "24GB"}.
+            precision (str): The floating-point precision to be used by the model. Options are 'float32', 'float16', 'bfloat16'.
+            quantization (int): The bit level for model quantization (0 for none, 8 for 8-bit quantization).
             torchscript (bool, optional): Whether to use TorchScript for model optimization. Defaults to True.
             compile (bool, optional): Whether to compile the model before fine-tuning. Defaults to False.
             flash_attention (bool): Whether to use flash attention 2. Default is False.
@@ -122,6 +126,8 @@ class VisionAPI(VisionBulk):
         self.processor_class = processor_class
         self.device_map = device_map
         self.max_memory = max_memory
+        self.precision = precision
+        self.quantization = quantization
         self.torchscript = torchscript
         self.compile = compile
         self.flash_attention = flash_attention
@@ -146,22 +152,23 @@ class VisionAPI(VisionBulk):
         self.processor_name = model_name
         self.processor_revision = processor_revision
 
-        # Load the specified models with the given configurations
-        self.model, self.processor = self.load_models(
-            model_name=self.model_name,
-            processor_name=self.processor_name,
-            model_revision=self.model_revision,
-            processor_revision=self.processor_revision,
-            model_class=self.model_class,
-            processor_class=self.processor_class,
-            device_map=self.device_map,
-            max_memory=self.max_memory,
-            torchscript=self.torchscript,
-            compile=self.compile,
-            flash_attention=self.flash_attention,
-            better_transformer=self.better_transformers,
-            **self.model_args,
-        )
+        if model_name not in ["easyocr", "mmocr", "paddleocr"]:
+            # Load the specified models with the given configurations
+            self.model, self.processor = self.load_models(
+                model_name=self.model_name,
+                processor_name=self.processor_name,
+                model_revision=self.model_revision,
+                processor_revision=self.processor_revision,
+                model_class=self.model_class,
+                processor_class=self.processor_class,
+                device_map=self.device_map,
+                max_memory=self.max_memory,
+                torchscript=self.torchscript,
+                compile=self.compile,
+                flash_attention=self.flash_attention,
+                better_transformer=self.better_transformers,
+                **self.model_args,
+            )
 
         def CORS():
             """

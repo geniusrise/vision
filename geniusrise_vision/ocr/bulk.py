@@ -44,7 +44,6 @@ class ImageOCRBulk(VisionBulk):
         batch_size: int = 32,
         **kwargs,
     ) -> None:
-
         super().__init__(input, output, state, **kwargs)
         self.log = setup_logger(self.state)
 
@@ -57,7 +56,6 @@ class ImageOCRBulk(VisionBulk):
     def initialize_model(
         self, model_name: str = None, model_type: str = None, kind: str = None, use_easyocr_bbox: bool = False
     ):
-
         self.use_easyocr_bbox = use_easyocr_bbox
         self.model_name = model_name
         self.model_type = model_type
@@ -84,7 +82,6 @@ class ImageOCRBulk(VisionBulk):
         hf_dataset: Union[str, None] = None,
         **kwargs,
     ) -> Union[Dataset, DatasetDict, Optional[Dataset]]:
-
         if dataset_path:
             return self._load_local_dataset(dataset_path, **kwargs)
         elif hf_dataset:
