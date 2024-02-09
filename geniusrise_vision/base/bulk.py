@@ -134,7 +134,6 @@ class VisionBulk(Bolt):
             use_cuda (bool): Flag to utilize CUDA for GPU acceleration.
             precision (str): The floating-point precision to be used by the model. Options are 'float32', 'float16', 'bfloat16'.
             quantization (int): The bit level for model quantization (0 for none, 8 for 8-bit quantization).
-            quantization (int): The level of model quantization for memory optimization. Options are 0, 8, 4.
             device_map (Union[str, Dict, None]): The device mapping for model parallelism. 'auto' or specific mapping dict.
             max_memory (Dict[int, str]): The maximum memory configuration for the model per device.
             torchscript (bool): Flag to enable TorchScript for model optimization.
