@@ -23,7 +23,7 @@ from geniusrise import BatchInput, BatchOutput, Bolt, State
 from geniusrise.logging import setup_logger
 from sklearn.metrics import accuracy_score
 from transformers import AutoConfig, EvalPrediction, Trainer, TrainingArguments
-from geniusrise_text.base.communication import send_fine_tuning_email
+from geniusrise_vision.base.communication import send_fine_tuning_email
 
 
 class VisionFineTuner(Bolt):
@@ -394,7 +394,6 @@ class VisionFineTuner(Bolt):
                 num_train_epochs=self.num_train_epochs,
                 per_device_train_batch_size=self.per_device_batch_size,
                 per_device_eval_batch_size=self.per_device_batch_size,
-                metric_for_best_model="accuracy",
                 save_steps=self.save_steps,
                 save_total_limit=self.save_total_limit,
                 load_best_model_at_end=self.load_best_model_at_end,

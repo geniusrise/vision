@@ -20,7 +20,7 @@ import transformers
 from geniusrise import BatchInput, BatchOutput, Bolt, State
 from geniusrise.logging import setup_logger
 from transformers import AutoModel, AutoProcessor
-from geniusrise_text.base.communication import send_email
+from geniusrise_vision.base.communication import send_email
 
 
 class VisionBulk(Bolt):
