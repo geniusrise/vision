@@ -86,6 +86,7 @@ class VisionAPI(VisionBulk):
         processor_class: str = "AutoProcessor",
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
+        use_cuda: bool = False,
         precision: str = "float16",
         quantization: int = 0,
         torchscript: bool = False,
@@ -126,6 +127,7 @@ class VisionAPI(VisionBulk):
         self.processor_class = processor_class
         self.device_map = device_map
         self.max_memory = max_memory
+        self.use_cuda = use_cuda
         self.precision = precision
         self.quantization = quantization
         self.torchscript = torchscript
@@ -161,12 +163,15 @@ class VisionAPI(VisionBulk):
                 processor_revision=self.processor_revision,
                 model_class=self.model_class,
                 processor_class=self.processor_class,
+                use_cuda=self.use_cuda,
+                precision=self.precision,
+                quantization=self.quantization,
                 device_map=self.device_map,
                 max_memory=self.max_memory,
                 torchscript=self.torchscript,
                 compile=self.compile,
                 flash_attention=self.flash_attention,
-                better_transformer=self.better_transformers,
+                better_transformers=self.better_transformers,
                 **self.model_args,
             )
 

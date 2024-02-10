@@ -15,22 +15,19 @@
 
 import json
 import os
-import torch
 import cv2
 from PIL import Image
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise.logging import setup_logger
 from geniusrise_vision.base.bulk import VisionBulk
 from typing import Optional, Union, List
-from datasets import Dataset, DatasetDict
-from transformers import AutoProcessor, AutoModelForVision2Seq
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from typing import Dict
 from mmocr.apis import MMOCRInferencer
-import cv2
 import easyocr
 from paddleocr import PaddleOCR
 from transformers import StoppingCriteriaList
 from geniusrise_vision.ocr.utils import StoppingCriteriaScores
-from transformers import StoppingCriteriaList
 
 
 class ImageOCRBulk(VisionBulk):
@@ -39,55 +36,54 @@ class ImageOCRBulk(VisionBulk):
         input: BatchInput,
         output: BatchOutput,
         state: State,
-        use_cuda: bool = True,
-        use_easyocr_bbox: bool = False,
-        batch_size: int = 32,
         **kwargs,
     ) -> None:
         super().__init__(input, output, state, **kwargs)
         self.log = setup_logger(self.state)
 
-        # Initialize model and processor
-        self.batch_size = batch_size
-        self.use_cuda = use_cuda and torch.cuda.is_available()
-        self.use_easyocr_bbox = use_easyocr_bbox
-        self.device = torch.device("cuda" if self.use_cuda else "cpu")
-
     def initialize_model(
-        self, model_name: str = None, model_type: str = None, kind: str = None, use_easyocr_bbox: bool = False
+        self,
+        model_name: str = None,
     ):
-        self.use_easyocr_bbox = use_easyocr_bbox
-        self.model_name = model_name
-        self.model_type = model_type
-        self.kind = kind
-
-        # Initialize the model and processor based on the model name
-        if model_type == "hf":
-            processor_model_id = f"{model_name}-{kind}" if kind else model_name
-            self.processor = AutoProcessor.from_pretrained(processor_model_id)
-            self.model = AutoModelForVision2Seq.from_pretrained(processor_model_id).to(self.device)
-        elif model_name == "easyocr":
-            self.reader = easyocr.Reader(["ch_sim", "en"], quantize=False)
-            print("easyocr installed")
+        if model_name == "easyocr":
+            lang = self.model_args.get("lang", "en")
+            self.reader = easyocr.Reader(["ch_sim", lang], quantize=self.quantization)
         elif model_name == "mmocr":
             self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device)
         elif model_name == "paddleocr":
-            self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=self.use_cuda)
-        else:
-            raise ValueError("Invalid OCR engine.")
+            lang = self.model_args.get("lang", "en")
+            self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=self.use_cuda)
 
     def load_dataset(
         self,
-        dataset_path: Union[str, None] = None,
-        hf_dataset: Union[str, None] = None,
+        dataset_path: str,
         **kwargs,
     ) -> Union[Dataset, DatasetDict, Optional[Dataset]]:
-        if dataset_path:
-            return self._load_local_dataset(dataset_path, **kwargs)
-        elif hf_dataset:
-            return load_dataset(hf_dataset, **kwargs)
+        """
+        Load a dataset for image OCR from a local path or Hugging Face Datasets.
+
+        Args:
+            dataset_path (Union[str, None], optional): The local path to the dataset directory. Defaults to None.
+            **kwargs: Additional arguments.
+
+        Returns:
+            Union[Dataset, DatasetDict, Optional[Dataset]]: The loaded dataset.
+        """
+
+        if self.use_huggingface_dataset:
+            dataset = load_dataset(self.huggingface_dataset)
+        elif os.path.isfile(os.path.join(dataset_path, "dataset_info.json")):
+            dataset = load_from_disk(dataset_path)
         else:
-            raise ValueError("Either 'dataset_path' or 'hf_dataset' must be provided")
+            dataset = self._load_local_dataset(dataset_path, **kwargs)
+
+        if hasattr(self, "map_data") and self.map_data:
+            fn = eval(self.map_data)
+            dataset = dataset.map(fn)
+        else:
+            dataset = dataset
+
+        return dataset
 
     def _load_local_dataset(self, dataset_path: str) -> Dataset:
         """
@@ -124,39 +120,120 @@ class ImageOCRBulk(VisionBulk):
                     paths.append(full_path)
 
             except Exception as e:
-                print(f"Error processing {file_path}: {e}")
+                self.log.exception(f"Error processing {file_path}: {e}")
 
         # Convert lists to PyTorch Dataset
         return Dataset.from_dict({"image": images, "path": paths})
 
-    def process(self) -> None:
+    def ocr(
+        self,
+        model_name,
+        model_class: str = "AutoModelForImageClassification",
+        processor_class: str = "AutoProcessor",
+        use_cuda: bool = False,
+        precision: str = "float16",
+        quantization: int = 0,
+        device_map: str | Dict | None = "auto",
+        max_memory=None,
+        torchscript=False,
+        compile: bool = True,
+        flash_attention: bool = False,
+        better_transformers: bool = False,
+        batch_size=32,
+        use_huggingface_dataset: bool = False,
+        huggingface_dataset: str = "",
+        use_easyocr_bbox: bool = False,
+        **kwargs,
+    ) -> None:
         """
         Perform OCR on images using a specified OCR engine.
 
         Args:
-                kind (str): The kind of text in the images ('printed' or 'handwritten').
-                use_cuda (bool): Whether to use CUDA for model inference.
-                ocr_engine (str): The OCR engine to use. Options are 'trocr', 'easyocr', 'mmocr', 'paddleocr', 'nougat'.
+            model_name (str): Name or path of the model.
+            model_class (str): Class name of the model (default "AutoModelForImageClassification").
+            processor_class (str): Class name of the processor (default "AutoProcessor").
+            use_cuda (bool): Whether to use CUDA for model inference (default False).
+            precision (str): Precision for model computation (default "float").
+            quantization (int): Level of quantization for optimizing model size and speed (default 0).
+            device_map (str | Dict | None): Specific device to use for computation (default "auto").
+            max_memory (Dict): Maximum memory configuration for devices.
+            torchscript (bool, optional): Whether to use a TorchScript-optimized version of the pre-trained language model. Defaults to False.
+            compile (bool, optional): Whether to compile the model before fine-tuning. Defaults to True.
+            flash_attention (bool): Whether to use flash attention optimization (default False).
+            batch_size (int): Number of classifications to process simultaneously (default 32).
+            use_huggingface_dataset (bool, optional): Whether to load a dataset from huggingface hub.
+            huggingface_dataset (str, optional): The huggingface dataset to use.
+            **kwargs: Arbitrary keyword arguments for model and generation configurations.
         """
-        try:
-            dataset_path = self.input.input_folder
-            self.output_path = self.output.output_folder
+        self.model_class = model_class
+        self.processor_class = processor_class
+        self.use_cuda = use_cuda
+        self.precision = precision
+        self.quantization = quantization
+        self.device_map = device_map
+        self.max_memory = max_memory
+        self.torchscript = torchscript
+        self.compile = compile
+        self.flash_attention = flash_attention
+        self.better_transformers = better_transformers
+        self.batch_size = batch_size
+        self.use_huggingface_dataset = use_huggingface_dataset
+        self.huggingface_dataset = huggingface_dataset
 
-            # Load dataset
-            self.dataset = self.load_dataset(dataset_path)
-            if self.dataset is None:
-                self.log.error("Failed to load dataset.")
-                return
+        if ":" in model_name:
+            model_revision = model_name.split(":")[1]
+            processor_revision = model_name.split(":")[1]
+            model_name = model_name.split(":")[0]
+            processor_name = model_name
+        else:
+            model_revision = None
+            processor_revision = None
+            processor_name = model_name
 
-            if self.model_type == "hf":
-                self.process_huggingface_models()
-            else:
-                print("process has been invoked")
-                self.process_other_models()
-                print("text generated")
+        # Store model and processor details
+        self.model_name = model_name
+        self.model_revision = model_revision
+        self.processor_name = model_name
+        self.processor_revision = processor_revision
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        model_args = {k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k}
+        self.model_args = model_args
+
+        if model_name not in ["easyocr", "mmocr", "paddleocr"]:
+            self.model, self.processor = self.load_models(
+                model_name=self.model_name,
+                processor_name=self.processor_name,
+                model_revision=self.model_revision,
+                processor_revision=self.processor_revision,
+                model_class=self.model_class,
+                processor_class=self.processor_class,
+                use_cuda=self.use_cuda,
+                precision=self.precision,
+                quantization=self.quantization,
+                device_map=self.device_map,
+                max_memory=self.max_memory,
+                torchscript=self.torchscript,
+                compile=self.compile,
+                flash_attention=self.flash_attention,
+                better_transformers=self.better_transformers,
+                **self.model_args,
+            )
+        else:
+            self.initialize_model(self.model_name)
+
+        dataset_path = self.input.input_folder
+        self.output_path = self.output.output_folder
+
+        # Load dataset
+        self.dataset = self.load_dataset(dataset_path)
+        if self.dataset is None:
+            self.log.error("Failed to load dataset.")
+            return
+
+        if model_name not in ["easyocr", "mmocr", "paddleocr"]:
+            self.process_huggingface_models()
+        else:
+            self.process_other_models()
 
     def process_huggingface_models(self):
         for batch_idx in range(0, len(self.dataset["image"]), self.batch_size):
@@ -167,13 +244,13 @@ class ImageOCRBulk(VisionBulk):
             if "nougat" in self.model_name.lower():
                 for img_path in batch_paths:
                     image = Image.open(img_path)
-                    pixel_values = self.processor(image, return_tensors="pt").pixel_values.to(device)
+                    pixel_values = self.processor(image, return_tensors="pt").pixel_values.to(self.device_map)
                     # generate transcription
                     outputs = self.model.generate(
-                        pixel_values.to(device),
+                        pixel_values.to(self.device_map),
                         min_length=1,
                         max_length=3584,
-                        bad_words_ids=[[processor.tokenizer.unk_token_id]],
+                        bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
                         return_dict_in_generate=True,
                         output_scores=True,
                         stopping_criteria=StoppingCriteriaList([StoppingCriteriaScores()]),
@@ -187,7 +264,7 @@ class ImageOCRBulk(VisionBulk):
                 else:
                     for img_path in batch_paths:
                         image = Image.open(img_path)
-                        pixel_values = self.processor(image, return_tensors="pt").pixel_values.to(device)
+                        pixel_values = self.processor(image, return_tensors="pt").pixel_values.to(self.device_map)
                         outputs = self.model.generate(pixel_values)
                         sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
                         ocr_results.append(sequence)
@@ -196,33 +273,23 @@ class ImageOCRBulk(VisionBulk):
         self._save_ocr_results(ocr_results, batch_paths, self.output_path, batch_idx)
 
     def process_other_models(self):
-        print("starting process_other_models")
         for batch_idx in range(0, len(self.dataset["image"]), self.batch_size):
             batch_images = self.dataset["image"][batch_idx : batch_idx + self.batch_size]
             batch_paths = self.dataset["path"][batch_idx : batch_idx + self.batch_size]
 
             ocr_texts = []
             for image_path in batch_paths:
-                print("entering loop")
                 if self.model_name == "easyocr":
-                    print("easyocr instantiated")
                     # OCR process
                     ocr_results = self.reader.readtext(image_path, detail=0, paragraph=True)
-                    print(ocr_results)
                     concatenated_text = " ".join(ocr_results)
-                    print(concatenated_text)
                     ocr_texts.append(concatenated_text)
-                    print(ocr_texts)
                 elif self.model_name == "mmocr":
-                    print("mmocr instantiated")
                     image = cv2.imread(image_path)
                     if image is None or image.size == 0:
-                        print(f"Failed to load image from {image_path}")
                         continue
                     result = self.mmocr_infer(image_path, save_vis=False)
-                    print("result generated")
                     predictions = result["predictions"]
-                    print("predictions generated")
 
                     # Extract texts and scores
                     texts = [pred["rec_texts"] for pred in predictions]
@@ -231,25 +298,22 @@ class ImageOCRBulk(VisionBulk):
                     # Concatenate texts for each image
                     concatenated_texts = [" ".join(text) for text in texts]
                     ocr_texts.append(" ".join(concatenated_texts))
-                    print(ocr_texts)
                 elif self.model_name == "paddleocr":
-                    print("paddleocr instantiated")
                     result = self.paddleocr_model.ocr(image_path, cls=False)
-                    print("result generated")
                     # Extract texts and scores
                     texts = [line[1][0] for line in result]
                     scores = [line[1][1] for line in result]
                     # Concatenate texts for each image
                     concatenated_text = " ".join(texts)
                     ocr_texts.append(concatenated_text)
-                    print(ocr_texts)
                 else:
                     raise ValueError("Invalid OCR engine.")
             # Save OCR results
-            print("going to start ocr results")
             self._save_ocr_results(ocr_texts, batch_paths, self.output_path, batch_idx)
 
     def _process_with_easyocr_bbox(self, batch_paths):
+        ocr_results = []
+
         # Initialize EasyOCR reader
         reader = easyocr.Reader(["ch_sim", "en"], quantize=False)
         for image_path in batch_paths:
@@ -268,7 +332,7 @@ class ImageOCRBulk(VisionBulk):
                 # Extract text region
                 if x_max > x_min and y_max > y_min:
                     text_region = image[y_min:y_max, x_min:x_max]
-                    pixel_values = self.processor(text_region, return_tensors="pt").pixel_values.to(device)
+                    pixel_values = self.processor(text_region, return_tensors="pt").pixel_values.to(self.device_map)
                     generated_ids = self.model.generate(pixel_values)
                     generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
                     image_texts.append(generated_text)
@@ -288,15 +352,12 @@ class ImageOCRBulk(VisionBulk):
             output_path (str): Directory to save the OCR results.
             batch_index (int): Index of the current batch.
         """
-        print("_save_ocr_results started")
         # Create a list of dictionaries with image paths and their corresponding OCR texts
         results = [
             {"image_path": image_path, "ocr_text": ocr_text} for image_path, ocr_text in zip(batch_paths, ocr_texts)
         ]
-        print(results)
         # Save to JSON
         file_name = os.path.join(self.output_path, f"ocr_results_batch_{batch_index}.json")
-        print(file_name)
         with open(file_name, "w") as file:
             json.dump(results, file, indent=4)
 

@@ -284,6 +284,8 @@ class VisionFineTuner(Bolt):
         per_device_batch_size: int,
         model_class: str = "AutoModel",
         processor_class: str = "AutoProcessor",
+        use_cuda: bool = False,
+        precision: str = "float16",
         device_map: str | dict = "auto",
         compile: bool = False,
         evaluate: bool = False,
@@ -314,6 +316,8 @@ class VisionFineTuner(Bolt):
             per_device_batch_size (int): The batch size per device during training.
             model_class (str, optional): The model class to use. Defaults to "AutoModel".
             processor_class (str, optional): The processor class to use. Defaults to "AutoProcessor".
+            use_cuda (bool): Flag to utilize CUDA for GPU acceleration.
+            precision (str): The floating-point precision to be used by the model. Options are 'float32', 'float16', 'bfloat16'.
             device_map (str | dict, optional): The device map for distributed training. Defaults to "auto".
             evaluate (bool, optional): Whether to evaluate the model after training. Defaults to False.
             compile (bool, optional): Whether to compile the model before fine-tuning. Defaults to True.
@@ -345,6 +349,8 @@ class VisionFineTuner(Bolt):
             self.per_device_batch_size = per_device_batch_size
             self.model_class = model_class
             self.processor_class = processor_class
+            self.use_cuda = use_cuda
+            self.precision = precision
             self.device_map = device_map
             self.evaluate = evaluate
             self.compile = compile
@@ -370,6 +376,7 @@ class VisionFineTuner(Bolt):
                 model_class=self.model_class,
                 device_map=self.device_map,
                 processor_class=self.processor_class,
+                precision=self.precision,
                 **model_kwargs,
             )
 
