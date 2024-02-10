@@ -15,7 +15,6 @@
 
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise_vision.base.bulk import VisionBulk
-from torchvision import transforms
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from typing import Dict, Optional, Union, Tuple
 import torchvision.transforms as transforms
@@ -45,8 +44,6 @@ class ImageClassificationBulk(VisionBulk):
     def load_dataset(
         self,
         dataset_path: str,
-        hf_dataset: Union[str, None] = None,
-        is_multiclass: bool = False,
         **kwargs,
     ) -> Union[Dataset, DatasetDict, Optional[Dataset]]:
         """
@@ -54,8 +51,6 @@ class ImageClassificationBulk(VisionBulk):
 
         Args:
             dataset_path (Union[str, None], optional): The local path to the dataset directory. Defaults to None.
-            hf_dataset (Union[str, None], optional): The Hugging Face dataset identifier. Defaults to None.
-            is_multiclass (bool, optional): Set to True for multi-class classification. Defaults to False.
             **kwargs: Additional arguments.
 
         Returns:
@@ -179,17 +174,6 @@ class ImageClassificationBulk(VisionBulk):
             huggingface_dataset (str, optional): The huggingface dataset to use.
             **kwargs: Arbitrary keyword arguments for model and generation configurations.
         """
-        if ":" in model_name:
-            model_revision = model_name.split(":")[1]
-            processor_revision = model_name.split(":")[1]
-            model_name = model_name.split(":")[0]
-            processor_name = model_name
-        else:
-            model_revision = None
-            processor_revision = None
-            processor_name = model_name
-
-        # Load model
         self.model_class = model_class
         self.processor_class = processor_class
         self.use_cuda = use_cuda
@@ -205,6 +189,22 @@ class ImageClassificationBulk(VisionBulk):
         self.use_huggingface_dataset = use_huggingface_dataset
         self.huggingface_dataset = huggingface_dataset
 
+        if ":" in model_name:
+            model_revision = model_name.split(":")[1]
+            processor_revision = model_name.split(":")[1]
+            model_name = model_name.split(":")[0]
+            processor_name = model_name
+        else:
+            model_revision = None
+            processor_revision = None
+            processor_name = model_name
+
+        # Store model and processor details
+        self.model_name = model_name
+        self.model_revision = model_revision
+        self.processor_name = model_name
+        self.processor_revision = processor_revision
+
         model_args = {k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k}
         self.model_args = model_args
 
@@ -215,12 +215,15 @@ class ImageClassificationBulk(VisionBulk):
             processor_revision=self.processor_revision,
             model_class=self.model_class,
             processor_class=self.processor_class,
+            use_cuda=self.use_cuda,
+            precision=self.precision,
+            quantization=self.quantization,
             device_map=self.device_map,
             max_memory=self.max_memory,
             torchscript=self.torchscript,
             compile=self.compile,
             flash_attention=self.flash_attention,
-            better_transformer=self.better_transformers,
+            better_transformers=self.better_transformers,
             **self.model_args,
         )
 

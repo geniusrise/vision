@@ -15,26 +15,23 @@
 
 import base64
 import io
-import torch
 import numpy as np
 import cherrypy
 import cv2
 import easyocr
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForVision2Seq
 from mmocr.apis import MMOCRInferencer
 from paddleocr import PaddleOCR
 from transformers import StoppingCriteriaList
 from geniusrise_vision.ocr.utils import StoppingCriteriaScores
-from transformers import StoppingCriteriaList
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise_vision.base import VisionAPI
-from PIL import Image
 
 
 class ImageOCRAPI(VisionAPI):
     def __init__(self, input: BatchInput, output: BatchOutput, state: State, use_cuda: bool = True):
         super().__init__(input=input, output=output, state=state)
+        self.hf_model = True
 
     def initialize_model(
         self,
@@ -55,7 +52,7 @@ class ImageOCRAPI(VisionAPI):
     @cherrypy.tools.allow(methods=["POST"])
     def ocr(self):
         if not self.model:
-            hf_model = False
+            self.hf_model = False
             self.initialize_model(self.model_name)
 
         try:
@@ -66,7 +63,7 @@ class ImageOCRAPI(VisionAPI):
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
             image_name = data.get("image_name", "Unnamed Image")
-            if hf_model:
+            if self.hf_model:
                 ocr_text = self.process_huggingface_models(image, use_easyocr_bbox)
             else:
                 ocr_text = self.process_other_models(image)
