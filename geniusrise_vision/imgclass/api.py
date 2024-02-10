@@ -24,7 +24,13 @@ from PIL import Image
 
 
 class ImageClassificationAPI(VisionAPI):
-    def __init__(self, input: BatchInput, output: BatchOutput, state: State):
+    def __init__(
+        self,
+        input: BatchInput,
+        output: BatchOutput,
+        state: State,
+        **kwargs,
+    ):
         """
         Initialize the API with a specified model.
         """
