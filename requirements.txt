@@ -39,7 +39,7 @@ filelock==3.13.1
 flake8==6.1.0
 frozenlist==1.4.0
 fsspec==2023.10.0
-geniusrise==0.0.16
+geniusrise==0.0.33
 google-auth==2.17.3
 GPUtil==1.4.0
 huggingface-hub==0.17.3
