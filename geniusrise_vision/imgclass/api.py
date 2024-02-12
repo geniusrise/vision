@@ -61,6 +61,10 @@ class ImageClassificationAPI(VisionAPI):
             image_bytes = base64.b64decode(image_base64)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
+            generation_params = data
+            if "image_base64" in generation_params:
+                del generation_params["image_base64"]
+
             # Preprocess the image
             inputs = self.processor(images=image, return_tensors="pt")
 
@@ -91,4 +95,4 @@ class ImageClassificationAPI(VisionAPI):
 
         except Exception as e:
             self.log.error(f"Error processing image: {e}")
-            return {"success": False, "error": str(e)}
+            raise e
