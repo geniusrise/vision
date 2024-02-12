@@ -73,7 +73,7 @@ class ImageClassificationAPI(VisionAPI):
 
             # Perform inference
             with torch.no_grad():
-                outputs = self.model(**inputs).logits
+                outputs = self.model(**inputs, **generation_params).logits
                 outputs = outputs.cpu().numpy()
 
             if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
