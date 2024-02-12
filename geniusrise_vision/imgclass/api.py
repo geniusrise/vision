@@ -89,7 +89,9 @@ class ImageClassificationAPI(VisionAPI):
                 for i, score in enumerate(scores.flatten())
             ]
 
-            response = {"original_image": image_base64, "predictions": labeled_scores}
+            max_score = max([x["score"] for x in labeled_scores])
+            max_scorers = [x for x in labeled_scores if x["score"] == max_score]
+            response = {"predictions": max_scorers, "all_predictions": labeled_scores}
 
             return response
 
