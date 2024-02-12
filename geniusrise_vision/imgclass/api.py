@@ -74,7 +74,7 @@ class ImageClassificationAPI(VisionAPI):
             # Perform inference
             with torch.no_grad():
                 outputs = self.model(**inputs).logits
-                outputs = outputs.numpy()
+                outputs = outputs.cpu().numpy()
 
             if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
                 scores = self.sigmoid(outputs)
