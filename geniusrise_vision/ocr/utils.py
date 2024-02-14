@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from transformers import StoppingCriteria, StoppingCriteriaList
+from transformers import StoppingCriteria
 from collections import defaultdict
 import torch
+
 
 class RunningVarTorch:
     def __init__(self, L=15, norm=False):
@@ -47,8 +48,8 @@ class StoppingCriteriaScores(StoppingCriteria):
         self.threshold = threshold
         self.vars = RunningVarTorch(norm=True)
         self.varvars = RunningVarTorch(L=window_size)
-        self.stop_inds = defaultdict(int)
-        self.stopped = defaultdict(bool)
+        self.stop_inds = defaultdict(int)  # type: ignore
+        self.stopped = defaultdict(bool)  # type: ignore
         self.size = 0
         self.window_size = window_size
 
@@ -67,9 +68,7 @@ class StoppingCriteriaScores(StoppingCriteria):
                 if self.stop_inds[b] > 0 and not self.stopped[b]:
                     self.stopped[b] = self.stop_inds[b] >= self.size
                 else:
-                    self.stop_inds[b] = int(
-                        min(max(self.size, 1) * 1.15 + 150 + self.window_size, 4095)
-                    )
+                    self.stop_inds[b] = int(min(max(self.size, 1) * 1.15 + 150 + self.window_size, 4095))
             else:
                 self.stop_inds[b] = 0
                 self.stopped[b] = False

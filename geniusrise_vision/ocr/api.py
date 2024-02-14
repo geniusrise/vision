@@ -41,7 +41,7 @@ class ImageOCRAPI(VisionAPI):
             lang = self.model_args.get("lang", "en")
             self.reader = easyocr.Reader(["ch_sim", lang], quantize=self.quantization)
         elif model_name == "mmocr":
-            self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device)
+            self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device_map)
         elif model_name == "paddleocr":
             lang = self.model_args.get("lang", "en")
             self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=self.use_cuda)
@@ -76,11 +76,11 @@ class ImageOCRAPI(VisionAPI):
 
     def process_huggingface_models(self, image: Image.Image, use_easyocr_bbox: bool):
         # Convert PIL Image to Tensor
-        pixel_values = self.processor(images=image, return_tensors="pt").pixel_values.to(self.device)
+        pixel_values = self.processor(images=image, return_tensors="pt").pixel_values.to(self.device_map)
         if "nougat" in self.model_name.lower():
             # Generate transcription using Nougat
             outputs = self.model.generate(
-                pixel_values.to(self.device),
+                pixel_values.to(self.device_map),
                 min_length=1,
                 max_length=3584,
                 bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
@@ -156,7 +156,7 @@ class ImageOCRAPI(VisionAPI):
                 # Crop the detected region from the PIL Image
                 text_region = image.crop((x_min, y_min, x_max, y_max))
                 # Convert cropped image to Tensor
-                pixel_values = self.processor(images=text_region, return_tensors="pt").pixel_values.to(self.device)
+                pixel_values = self.processor(images=text_region, return_tensors="pt").pixel_values.to(self.device_map)
                 # Perform OCR using TROCR
                 generated_ids = self.model.generate(pixel_values)
                 generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
