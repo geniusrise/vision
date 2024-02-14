@@ -23,7 +23,8 @@ from geniusrise_vision.base.bulk import VisionBulk
 from typing import Optional, Union, List
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from typing import Dict
-from mmocr.apis import MMOCRInferencer
+
+# from mmocr.apis import MMOCRInferencer
 import easyocr
 from paddleocr import PaddleOCR
 from transformers import StoppingCriteriaList
@@ -49,8 +50,8 @@ class ImageOCRBulk(VisionBulk):
         if model_name == "easyocr":
             lang = self.model_args.get("lang", "en")
             self.reader = easyocr.Reader(["ch_sim", lang], quantize=self.quantization)
-        elif model_name == "mmocr":
-            self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device)
+        # elif model_name == "mmocr":
+        #     self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device)
         elif model_name == "paddleocr":
             lang = self.model_args.get("lang", "en")
             self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=self.use_cuda)
@@ -285,20 +286,20 @@ class ImageOCRBulk(VisionBulk):
                     ocr_results = self.reader.readtext(image_path, detail=0, paragraph=True)
                     concatenated_text = " ".join(ocr_results)
                     ocr_texts.append(concatenated_text)
-                elif self.model_name == "mmocr":
-                    image = cv2.imread(image_path)
-                    if image is None or image.size == 0:
-                        continue
-                    result = self.mmocr_infer(image_path, save_vis=False)
-                    predictions = result["predictions"]
+                # elif self.model_name == "mmocr":
+                #     image = cv2.imread(image_path)
+                #     if image is None or image.size == 0:
+                #         continue
+                #     result = self.mmocr_infer(image_path, save_vis=False)
+                #     predictions = result["predictions"]
 
-                    # Extract texts and scores
-                    texts = [pred["rec_texts"] for pred in predictions]
-                    scores = [pred["rec_scores"] for pred in predictions]
+                #     # Extract texts and scores
+                #     texts = [pred["rec_texts"] for pred in predictions]
+                #     scores = [pred["rec_scores"] for pred in predictions]
 
-                    # Concatenate texts for each image
-                    concatenated_texts = [" ".join(text) for text in texts]
-                    ocr_texts.append(" ".join(concatenated_texts))
+                #     # Concatenate texts for each image
+                #     concatenated_texts = [" ".join(text) for text in texts]
+                #     ocr_texts.append(" ".join(concatenated_texts))
                 elif self.model_name == "paddleocr":
                     result = self.paddleocr_model.ocr(image_path, cls=False)
                     # Extract texts and scores

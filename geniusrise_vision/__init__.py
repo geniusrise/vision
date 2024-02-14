@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .imgclass import ImageClassificationAPI
-from .imgclass import ImageClassificationBulk
-from .imgclass import ImageClassificationFineTuner
+# from .imgclass import ImageClassificationAPI
+# from .imgclass import ImageClassificationBulk
+# from .imgclass import ImageClassificationFineTuner
 
-from .ocr import ImageOCRAPI
-from .ocr import ImageOCRBulk
-from .ocr import OCRFineTuner
+# from .ocr import ImageOCRAPI
+# from .ocr import ImageOCRBulk
+# from .ocr import OCRFineTuner
