@@ -30,7 +30,7 @@ from geniusrise_vision.base import VisionAPI
 
 
 class ImageOCRAPI(VisionAPI):
-    def __init__(self, input: BatchInput, output: BatchOutput, state: State, use_cuda: bool = True):
+    def __init__(self, input: BatchInput, output: BatchOutput, state: State, **kwargs):
         super().__init__(input=input, output=output, state=state)
         self.hf_model = True
 
