@@ -20,7 +20,8 @@ import cherrypy
 import cv2
 import easyocr
 from PIL import Image
-from mmocr.apis import MMOCRInferencer
+
+# from mmocr.apis import MMOCRInferencer
 from paddleocr import PaddleOCR
 from transformers import StoppingCriteriaList
 from geniusrise_vision.ocr.utils import StoppingCriteriaScores
@@ -40,8 +41,8 @@ class ImageOCRAPI(VisionAPI):
         if model_name == "easyocr":
             lang = self.model_args.get("lang", "en")
             self.reader = easyocr.Reader(["ch_sim", lang], quantize=self.quantization)
-        elif model_name == "mmocr":
-            self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device_map)
+        # elif model_name == "mmocr":
+        #     self.mmocr_infer = MMOCRInferencer(det="dbnet", rec="svtr-small", kie="SDMGR", device=self.device_map)
         elif model_name == "paddleocr":
             lang = self.model_args.get("lang", "en")
             self.paddleocr_model = PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=self.use_cuda)
@@ -109,15 +110,15 @@ class ImageOCRAPI(VisionAPI):
             ocr_results = self.reader.readtext(open_cv_image, detail=0, paragraph=True)
             concatenated_text = " ".join(ocr_results)
 
-        elif self.model_name == "mmocr":
-            concatenated_text = ""
-            # Perform OCR using MMOCR
-            result = self.mmocr_infer(open_cv_image, save_vis=False)
-            predictions = result["predictions"]
-            # Extract texts and scores
-            texts = [pred["rec_texts"] for pred in predictions]
-            ocr_texts = [" ".join(text) for text in texts]
-            concatenated_texts = " ".join(ocr_texts)
+        # elif self.model_name == "mmocr":
+        #     concatenated_text = ""
+        #     # Perform OCR using MMOCR
+        #     result = self.mmocr_infer(open_cv_image, save_vis=False)
+        #     predictions = result["predictions"]
+        #     # Extract texts and scores
+        #     texts = [pred["rec_texts"] for pred in predictions]
+        #     ocr_texts = [" ".join(text) for text in texts]
+        #     concatenated_texts = " ".join(ocr_texts)
 
         elif self.model_name == "paddleocr":
             # Perform OCR using PaddleOCR
