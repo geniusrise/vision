@@ -28,6 +28,7 @@ import easyocr
 from paddleocr import PaddleOCR
 from transformers import StoppingCriteriaList
 from geniusrise_vision.ocr.utils import StoppingCriteriaScores
+from pdf2image import convert_from_path
 
 
 class ImageOCRBulk(VisionBulk):
