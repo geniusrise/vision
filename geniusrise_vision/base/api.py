@@ -172,7 +172,7 @@ class VisionAPI(VisionBulk):
                 compile=self.compile,
                 flash_attention=self.flash_attention,
                 better_transformers=self.better_transformers,
-                **self.model_args,
+                # **self.model_args,
             )
 
         def CORS():
