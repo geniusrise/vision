@@ -73,7 +73,7 @@ class ImageOCRAPI(VisionAPI):
 
         except Exception as e:
             cherrypy.log.error(f"Error processing image: {e}")
-            return {"success": False, "error": str(e)}
+            raise e
 
     def process_huggingface_models(self, image: Image.Image, use_easyocr_bbox: bool):
         # Convert PIL Image to Tensor
