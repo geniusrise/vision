@@ -154,6 +154,8 @@ class VisionAPI(VisionBulk):
         self.processor_name = model_name
         self.processor_revision = processor_revision
 
+        self.log.error("Nahiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii", self.flash_attention)
+
         if model_name not in ["easyocr", "mmocr", "paddleocr"]:
             # Load the specified models with the given configurations
             self.model, self.processor = self.load_models(
