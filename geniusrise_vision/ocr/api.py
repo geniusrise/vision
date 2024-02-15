@@ -98,7 +98,7 @@ class ImageOCRAPI(VisionAPI):
                 return_dict_in_generate=True,
                 output_scores=True,
             )
-            sequence = self.processor.batch_decode(outputs)[0]
+            sequence = self.processor.batch_decode(outputs.sequences)[0]
             sequence = sequence.replace(self.processor.tokenizer.eos_token, "").replace(
                 self.processor.tokenizer.pad_token, ""
             )
