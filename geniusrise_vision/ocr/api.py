@@ -123,6 +123,7 @@ class ImageOCRAPI(VisionAPI):
         elif self.model_name == "paddleocr":
             # Perform OCR using PaddleOCR
             result = self.paddleocr_model.ocr(open_cv_image, cls=False)
+            print(result)
             # Extract texts
             texts = [line[1][0] for line in result]
             concatenated_text = " ".join(texts)
