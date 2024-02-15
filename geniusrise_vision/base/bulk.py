@@ -116,7 +116,7 @@ class VisionBulk(Bolt):
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
         torchscript: bool = False,
-        compile: bool = True,
+        compile: bool = False,
         flash_attention: bool = False,
         better_transformers: bool = False,
         **model_args: Any,
