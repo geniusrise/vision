@@ -18,6 +18,7 @@ import io
 import numpy as np
 import cherrypy
 import cv2
+import re
 import easyocr
 from PIL import Image
 from typing import Any
@@ -78,7 +79,33 @@ class ImageOCRAPI(VisionAPI):
         # Convert PIL Image to Tensor
         pixel_values = self.processor(images=image, return_tensors="pt").pixel_values
 
-        if "nougat" in self.model_name.lower() or "donut" in self.model_name.lower():
+        if "donut" in self.model_name.lower():
+            task_prompt = "<s_cord-v2>"
+            decoder_input_ids = self.processor.tokenizer(
+                task_prompt, add_special_tokens=False, return_tensors="pt"
+            ).input_ids
+
+            if self.use_cuda:
+                pixel_values = pixel_values.to(self.device_map)
+                decoder_input_ids = decoder_input_ids.to(self.device_map)
+
+            # Generate transcription using Nougat
+            outputs = self.model.generate(
+                pixel_values,
+                decoder_input_ids=decoder_input_ids,
+                max_length=self.model.decoder.config.max_position_embeddings,
+                bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
+                return_dict_in_generate=True,
+                output_scores=True,
+            )
+            sequence = self.processor.batch_decode(outputs)[0]
+            sequence = sequence.replace(self.processor.tokenizer.eos_token, "").replace(
+                self.processor.tokenizer.pad_token, ""
+            )
+            sequence = re.sub(r"<.*?>", "", sequence, count=1).strip()  # remove first task start token
+            sequence = self.processor.token2json(sequence)
+
+        elif "nougat" in self.model_name.lower():
             task_prompt = "<s_cord-v2>"
             decoder_input_ids = self.processor.tokenizer(
                 task_prompt, add_special_tokens=False, return_tensors="pt"
