@@ -132,7 +132,7 @@ class VisionAPI(VisionBulk):
         self.quantization = quantization
         self.torchscript = torchscript
         self.compile = compile
-        self.flash_attention = flash_attention
+        self.flash_attention = False if flash_attention == "False" or flash_attention is False else True
         self.better_transformers = better_transformers
         self.model_args = model_args
         self.username = username
@@ -153,8 +153,6 @@ class VisionAPI(VisionBulk):
         self.model_revision = model_revision
         self.processor_name = model_name
         self.processor_revision = processor_revision
-
-        self.log.error("Nahiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii", self.flash_attention)
 
         if model_name not in ["easyocr", "mmocr", "paddleocr"]:
             # Load the specified models with the given configurations
