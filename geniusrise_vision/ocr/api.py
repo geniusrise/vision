@@ -111,7 +111,7 @@ class ImageOCRAPI(VisionAPI):
             outputs = self.model.generate(
                 pixel_values,
                 min_length=1,
-                max_new_tokens=100,
+                max_new_tokens=1024,
                 bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
             )
             sequence = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
