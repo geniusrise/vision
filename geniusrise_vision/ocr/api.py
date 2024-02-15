@@ -24,8 +24,6 @@ from typing import Any
 
 # from mmocr.apis import MMOCRInferencer
 from paddleocr import PaddleOCR
-from transformers import StoppingCriteriaList
-from geniusrise_vision.ocr.utils import StoppingCriteriaScores
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise_vision.base import VisionAPI
 
@@ -78,17 +76,26 @@ class ImageOCRAPI(VisionAPI):
 
     def process_huggingface_models(self, image: Image.Image, use_easyocr_bbox: bool):
         # Convert PIL Image to Tensor
-        pixel_values = self.processor(images=image, return_tensors="pt").pixel_values.to(self.device_map)
+        pixel_values = self.processor(images=image, return_tensors="pt").pixel_values
+
         if "nougat" in self.model_name.lower():
+            task_prompt = "<s_cord-v2>"
+            decoder_input_ids = self.processor.tokenizer(
+                task_prompt, add_special_tokens=False, return_tensors="pt"
+            ).input_ids
+
+            if self.use_cuda:
+                pixel_values = pixel_values.to(self.device_map)
+                decoder_input_ids = decoder_input_ids.to(self.device_map)
+
             # Generate transcription using Nougat
             outputs = self.model.generate(
-                pixel_values.to(self.device_map),
-                min_length=1,
-                max_length=3584,
+                pixel_values,
+                decoder_input_ids=decoder_input_ids,
+                max_length=self.model.decoder.config.max_position_embeddings,
                 bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
                 return_dict_in_generate=True,
                 output_scores=True,
-                stopping_criteria=StoppingCriteriaList([StoppingCriteriaScores()]),
             )
             sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
             sequence = self.processor.post_process_generation(sequence, fix_markdown=False)
