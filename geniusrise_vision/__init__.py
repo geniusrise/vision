@@ -17,6 +17,7 @@ from .imgclass import ImageClassificationAPI
 from .imgclass import ImageClassificationBulk
 from .imgclass import ImageClassificationFineTuner
 
-# from .ocr import ImageOCRAPI
-# from .ocr import ImageOCRBulk
+from .ocr import ImageOCRAPI
+from .ocr import ImageOCRBulk
+
 # from .ocr import OCRFineTuner
