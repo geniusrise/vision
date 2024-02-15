@@ -52,7 +52,7 @@ class ImageOCRAPI(VisionAPI):
     @cherrypy.tools.json_out()
     @cherrypy.tools.allow(methods=["POST"])
     def ocr(self):
-        if not self.model:
+        if not hasattr(self, "model") or not self.model:
             self.hf_model = False
             self.initialize_model(self.model_name)
 
