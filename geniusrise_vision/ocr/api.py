@@ -93,7 +93,7 @@ class ImageOCRAPI(VisionAPI):
             sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
             sequence = self.processor.post_process_generation(sequence, fix_markdown=False)
         else:
-            if self.use_easyocr_bbox:
+            if use_easyocr_bbox:
                 self._process_with_easyocr_bbox(image, self.use_cuda)
             else:
                 outputs = self.model.generate(pixel_values)
