@@ -78,6 +78,8 @@ class ImageOCRAPI(VisionAPI):
     def process_huggingface_models(self, image: Image.Image, use_easyocr_bbox: bool):
         # Convert PIL Image to Tensor
         pixel_values = self.processor(images=image, return_tensors="pt").pixel_values
+        if self.use_cuda:
+            pixel_values = pixel_values.to(self.device_map)
 
         if "donut" in self.model_name.lower():
             task_prompt = "<s_cord-v2>"
@@ -86,7 +88,6 @@ class ImageOCRAPI(VisionAPI):
             ).input_ids
 
             if self.use_cuda:
-                pixel_values = pixel_values.to(self.device_map)
                 decoder_input_ids = decoder_input_ids.to(self.device_map)
 
             # Generate transcription using Nougat
@@ -106,17 +107,14 @@ class ImageOCRAPI(VisionAPI):
             sequence = self.processor.token2json(sequence)
 
         elif "nougat" in self.model_name.lower():
-            if self.use_cuda:
-                pixel_values = pixel_values.to(self.device_map)
-
             # Generate transcription using Nougat
             outputs = self.model.generate(
                 pixel_values,
                 min_length=1,
-                max_new_tokens=1024,
+                max_new_tokens=100,
                 bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
             )
-            sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
+            sequence = self.processor.batch_decode(outputs, skip_special_tokens=True)[0]
             sequence = self.processor.post_process_generation(sequence, fix_markdown=True)
         else:
             if use_easyocr_bbox:
