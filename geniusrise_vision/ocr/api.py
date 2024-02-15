@@ -78,7 +78,7 @@ class ImageOCRAPI(VisionAPI):
         # Convert PIL Image to Tensor
         pixel_values = self.processor(images=image, return_tensors="pt").pixel_values
 
-        if "nougat" in self.model_name.lower():
+        if "nougat" in self.model_name.lower() or "donut" in self.model_name.lower():
             task_prompt = "<s_cord-v2>"
             decoder_input_ids = self.processor.tokenizer(
                 task_prompt, add_special_tokens=False, return_tensors="pt"
