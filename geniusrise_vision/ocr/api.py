@@ -106,26 +106,18 @@ class ImageOCRAPI(VisionAPI):
             sequence = self.processor.token2json(sequence)
 
         elif "nougat" in self.model_name.lower():
-            task_prompt = "<s_cord-v2>"
-            decoder_input_ids = self.processor.tokenizer(
-                task_prompt, add_special_tokens=False, return_tensors="pt"
-            ).input_ids
-
             if self.use_cuda:
                 pixel_values = pixel_values.to(self.device_map)
-                decoder_input_ids = decoder_input_ids.to(self.device_map)
 
             # Generate transcription using Nougat
             outputs = self.model.generate(
                 pixel_values,
-                decoder_input_ids=decoder_input_ids,
-                max_length=self.model.decoder.config.max_position_embeddings,
+                min_length=1,
+                max_new_tokens=1024,
                 bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
-                return_dict_in_generate=True,
-                output_scores=True,
             )
             sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
-            sequence = self.processor.post_process_generation(sequence, fix_markdown=False)
+            sequence = self.processor.post_process_generation(sequence, fix_markdown=True)
         else:
             if use_easyocr_bbox:
                 self._process_with_easyocr_bbox(image, self.use_cuda)
