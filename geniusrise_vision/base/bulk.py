@@ -161,6 +161,7 @@ class VisionBulk(Bolt):
         self.log.info(f"Loading model from {model_name} {model_revision} with {model_args}")
 
         if flash_attention:
+            self.log.error("Nahiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii")
             model_args = {**model_args, **{"attn_implementation": "flash_attention_2"}}
 
         if quantization == 8:
