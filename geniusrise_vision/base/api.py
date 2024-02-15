@@ -132,7 +132,7 @@ class VisionAPI(VisionBulk):
         self.quantization = quantization
         self.torchscript = torchscript
         self.compile = compile
-        self.flash_attention = False if flash_attention == "False" or flash_attention is False else True
+        self.flash_attention = flash_attention
         self.better_transformers = better_transformers
         self.model_args = model_args
         self.username = username
