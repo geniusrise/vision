@@ -20,6 +20,7 @@ import cherrypy
 import cv2
 import easyocr
 from PIL import Image
+from typing import Any
 
 # from mmocr.apis import MMOCRInferencer
 from paddleocr import PaddleOCR
@@ -65,11 +66,11 @@ class ImageOCRAPI(VisionAPI):
 
             image_name = data.get("image_name", "Unnamed Image")
             if self.hf_model:
-                ocr_text = self.process_huggingface_models(image, use_easyocr_bbox)
+                result = self.process_huggingface_models(image, use_easyocr_bbox)
             else:
-                ocr_text = self.process_other_models(image)
+                result = self.process_other_models(image)
 
-            return {"success": True, "ocr_text": ocr_text, "image_name": image_name}
+            return {"success": True, "result": result, "image_name": image_name}
 
         except Exception as e:
             cherrypy.log.error(f"Error processing image: {e}")
@@ -100,7 +101,7 @@ class ImageOCRAPI(VisionAPI):
 
         return sequence
 
-    def process_other_models(self, image: Image.Image):
+    def process_other_models(self, image: Image.Image) -> Any:
         # Convert PIL Image to OpenCV format
         open_cv_image = np.array(image)
         open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
@@ -108,7 +109,7 @@ class ImageOCRAPI(VisionAPI):
         if self.model_name == "easyocr":
             # Perform OCR using EasyOCR
             ocr_results = self.reader.readtext(open_cv_image, detail=0, paragraph=True)
-            concatenated_text = " ".join(ocr_results)
+            return ocr_results
 
         # elif self.model_name == "mmocr":
         #     concatenated_text = ""
@@ -123,15 +124,9 @@ class ImageOCRAPI(VisionAPI):
         elif self.model_name == "paddleocr":
             # Perform OCR using PaddleOCR
             result = self.paddleocr_model.ocr(open_cv_image, cls=False)
-            print(result)
-            # Extract texts
-            texts = [line[1][0] for line in result]
-            concatenated_text = " ".join(texts)
-
+            return result
         else:
             raise ValueError("Invalid OCR engine.")
-
-        return concatenated_text
 
     def _process_with_easyocr_bbox(
         self,
