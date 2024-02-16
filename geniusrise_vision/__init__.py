@@ -20,4 +20,4 @@ from .imgclass import ImageClassificationFineTuner
 from .ocr import ImageOCRAPI
 from .ocr import ImageOCRBulk
 
-# from .ocr import OCRFineTuner
+from .segment import VisionSegmentationAPI

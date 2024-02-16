@@ -125,7 +125,7 @@ class VisionSegmentationAPI(VisionAPI):
                     )[0]
 
                     annotation = []
-                    segmentation = outputs.numpy()
+                    segmentation = outputs.cpu().numpy()
                     labels = np.unique(segmentation)
 
                     for label in labels:
