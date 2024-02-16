@@ -53,13 +53,13 @@ class VisionSegmentationAPI(VisionAPI):
             # in some cases we need to feed the tokenized task as an input
             if self.model.config.__class__.__name__ == "OneFormerConfig":
                 if subtask is not None:
-                    inputs = self.processor(images=[image], return_tensors="pt", task_inputs=[subtask])
-                    inputs["task_inputs"] = self.tokenizer(
-                        inputs["task_inputs"],
-                        padding="max_length",
-                        max_length=self.model.config.task_seq_len,
-                        return_tensors=self.framework,
-                    )["input_ids"]
+                    inputs = self.processor(
+                        images=[image], task_inputs=[subtask], return_tensors="pt", task_inputs=[subtask]
+                    )
+                else:
+                    inputs = self.processor(
+                        images=[image], task_inputs=["semantic"], return_tensors="pt", task_inputs=[subtask]
+                    )
             else:
                 inputs = self.processor(images=[image], return_tensors="pt")
 
