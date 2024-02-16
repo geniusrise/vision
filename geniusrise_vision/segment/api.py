@@ -66,6 +66,9 @@ class VisionSegmentationAPI(VisionAPI):
             target_size = [(image.height, image.width)]
             # inputs["target_size"] = target_size
 
+            if self.use_cuda:
+                inputs = inputs.to(self.device_map)
+
             with torch.no_grad():
                 # target_size = inputs.pop("target_size")
                 model_outputs = self.model(**inputs)
