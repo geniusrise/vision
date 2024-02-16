@@ -54,12 +54,6 @@ class VisionSegmentationAPI(VisionAPI):
             if self.model.config.__class__.__name__ == "OneFormerConfig":
                 if subtask is not None:
                     inputs = self.processor(images=[image], return_tensors="pt", task_inputs=[subtask])
-                    # inputs["task_inputs"] = self.tokenizer(
-                    #     inputs["task_inputs"],
-                    #     padding="max_length",
-                    #     max_length=self.model.config.task_seq_len,
-                    #     return_tensors=self.framework,
-                    # )["input_ids"]
             else:
                 inputs = self.processor(images=[image], return_tensors="pt")
 
@@ -80,7 +74,7 @@ class VisionSegmentationAPI(VisionAPI):
                     outputs = self.processor.post_process_panoptic_segmentation(
                         model_outputs,
                         target_sizes=target_size,
-                    )[0]
+                    )[0].cpu()
 
                     annotation = []
                     segmentation = outputs["segmentation"]
@@ -103,7 +97,7 @@ class VisionSegmentationAPI(VisionAPI):
                     outputs = self.processor.post_process_instance_segmentation(
                         model_outputs,
                         target_sizes=target_size,
-                    )[0]
+                    )[0].cpu()
 
                     annotation = []
                     segmentation = outputs["segmentation"]
