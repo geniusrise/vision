@@ -65,7 +65,7 @@ class VisionSegmentationAPI(VisionAPI):
 
             with torch.no_grad():
                 # target_size = inputs.pop("target_size")
-                model_outputs = self.model(**inputs)
+                model_outputs = self.model(**inputs, **kwargs)
                 # model_outputs["target_size"] = target_size
 
                 # Post-processing
