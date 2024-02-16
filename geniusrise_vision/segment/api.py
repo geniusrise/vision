@@ -81,7 +81,7 @@ class VisionSegmentationAPI(VisionAPI):
 
                     for segment in outputs["segments_info"]:
                         mask = (segmentation == segment["id"]) * 255
-                        mask = Image.fromarray(mask.numpy().astype(np.uint8), mode="L")
+                        mask = Image.fromarray(mask.cpu().numpy().astype(np.uint8), mode="L")
                         label = self.model.config.id2label[segment["label_id"]]
                         score = segment["score"]
 
@@ -104,7 +104,7 @@ class VisionSegmentationAPI(VisionAPI):
 
                     for segment in outputs["segments_info"]:
                         mask = (segmentation == segment["id"]) * 255
-                        mask = Image.fromarray(mask.cpu().numpy().numpy().astype(np.uint8), mode="L")
+                        mask = Image.fromarray(mask.cpu().numpy().astype(np.uint8), mode="L")
                         label = self.model.config.id2label[segment["label_id"]]
                         score = segment["score"]
 
@@ -127,7 +127,7 @@ class VisionSegmentationAPI(VisionAPI):
 
                     for label in labels:
                         mask = (segmentation == label) * 255
-                        mask = Image.fromarray(mask.cpu().numpy().astype(np.uint8), mode="L")
+                        mask = Image.fromarray(mask.astype(np.uint8), mode="L")
                         label = self.model.config.id2label[label]
 
                         # Convert the original PIL image to base64 for returning
