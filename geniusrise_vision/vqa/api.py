@@ -23,6 +23,57 @@ from PIL import Image
 
 
 class VisualQAAPI(VisionAPI):
+    r"""
+    VisualQAAPI extends VisionAPI to provide an interface for visual question answering (VQA) tasks. This API supports
+    answering questions about an image by utilizing deep learning models specifically trained for VQA. It processes
+    requests containing an image and a question about the image, performs inference using the loaded model, and returns
+    the predicted answer.
+
+    Attributes:
+        Inherits all attributes from the VisionAPI class.
+
+    Methods:
+        answer_question(self): Receives an image and a question, returns the answer based on visual content.
+
+    Example CLI Usage:
+
+    ```bash
+    genius VisualQAAPI rise \
+        batch \
+            --input_s3_bucket geniusrise-test \
+            --input_s3_folder none \
+        batch \
+            --output_s3_bucket geniusrise-test \
+            --output_s3_folder none \
+        postgres \
+            --postgres_host 127.0.0.1 \
+            --postgres_port 5432 \
+            --postgres_user postgres \
+            --postgres_password postgres \
+            --postgres_database geniusrise\
+            --postgres_table state \
+        listen \
+            --args \
+                model_name="llava-hf/bakLlava-v1-hf" \
+                model_class="LlavaForConditionalGeneration" \
+                processor_class="AutoProcessor" \
+                device_map="cuda:0" \
+                use_cuda=True \
+                precision="bfloat16" \
+                quantization=0 \
+                max_memory=None \
+                torchscript=False \
+                compile=False \
+                flash_attention=False \
+                better_transformers=False \
+                endpoint="*" \
+                port=3000 \
+                cors_domain="http://localhost:3000" \
+                username="user" \
+                password="password"
+    ```
+    """
+
     def __init__(
         self,
         input: BatchInput,
@@ -31,8 +82,14 @@ class VisualQAAPI(VisionAPI):
         **kwargs,
     ):
         """
-        Initialize the VisualQA API with a specified model and its configuration.
-        Inherits from VisionAPI to leverage pre-trained models for Visual Question Answering tasks.
+        Initializes the VisualQAAPI with configurations for input, output, state management, and any model-specific
+        parameters for visual question answering tasks.
+
+        Args:
+            input (BatchInput): Configuration for the input data.
+            output (BatchOutput): Configuration for the output data.
+            state (State): State management for the API.
+            **kwargs: Additional keyword arguments for extended functionality.
         """
         super().__init__(input=input, output=output, state=state)
 
@@ -42,13 +99,33 @@ class VisualQAAPI(VisionAPI):
     @cherrypy.tools.allow(methods=["POST"])
     def answer_question(self):
         """
-        Endpoint for receiving an image with a question and returning the answer based on visual content.
-
-        Processes the request JSON containing an image in base64 format and a question string.
-        Utilizes the loaded model for answering questions related to the image.
+        Endpoint for receiving an image with a question and returning the answer based on the visual content of the image.
+        It processes the request containing a base64-encoded image and a question string, and utilizes the loaded model
+        to predict the answer to the question related to the image.
 
         Returns:
-            Dict[str, Any]: A dictionary containing the question, and the predicted answer.
+            Dict[str, Any]: A dictionary containing the original question and the predicted answer.
+
+        Raises:
+            ValueError: If required fields 'image_base64' and 'question' are not provided in the request.
+            Exception: If an error occurs during image processing or inference.
+
+        Example CURL Request:
+        ```bash
+        curl -X POST localhost:3000/api/v1/answer_question \
+            -H "Content-Type: application/json" \
+            -d '{"image_base64": "<base64-encoded-image>", "question": "What is the color of the sky in the image?"}'
+        ```
+
+        or
+
+        ```bash
+        (base64 -w 0 test_images_segment_finetune/image1.jpg | awk '{print "{\"image_base64\": \""$0"\", \"question\": \"how many cats are there?\"}"}' > /tmp/image_payload.json)
+        curl -X POST http://localhost:3000/api/v1/answer_question \
+            -H "Content-Type: application/json" \
+            -u user:password \
+            -d @/tmp/image_payload.json | jq
+        ```
         """
         try:
             data = cherrypy.request.json

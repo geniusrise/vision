@@ -30,14 +30,131 @@ from geniusrise_vision.base import VisionAPI
 
 
 class ImageOCRAPI(VisionAPI):
+    r"""
+    ImageOCRAPI provides Optical Character Recognition (OCR) capabilities for images, leveraging different OCR engines
+    like EasyOCR, PaddleOCR, and Hugging Face models tailored for OCR tasks. This API can decode base64-encoded images,
+    process them through the chosen OCR engine, and return the recognized text.
+
+    The API supports dynamic selection of OCR engines and configurations based on the provided model name and arguments,
+    offering flexibility in processing various languages and image types.
+
+    Attributes:
+        Inherits all attributes from the VisionAPI class.
+
+    Methods:
+        ocr(self): Processes an uploaded image for OCR and returns the recognized text.
+
+    Example CLI Usage:
+
+    EasyOCR:
+
+    ```bash
+    genius ImageOCRAPI rise \
+        batch \
+            --input_s3_bucket geniusrise-test \
+            --input_s3_folder none \
+        batch \
+            --output_s3_bucket geniusrise-test \
+            --output_s3_folder none \
+        postgres \
+            --postgres_host 127.0.0.1 \
+            --postgres_port 5432 \
+            --postgres_user postgres \
+            --postgres_password postgres \
+            --postgres_database geniusrise\
+            --postgres_table state \
+        listen \
+            --args \
+                model_name="easyocr" \
+                device_map="cuda:0" \
+                endpoint="*" \
+                port=3000 \
+                cors_domain="http://localhost:3000" \
+                username="user" \
+                password="password"
+    ```
+
+    Paddle OCR:
+
+    ```bash
+    genius ImageOCRAPI rise \
+        batch \
+            --input_s3_bucket geniusrise-test \
+            --input_s3_folder none \
+        batch \
+            --output_s3_bucket geniusrise-test \
+            --output_s3_folder none \
+        postgres \
+            --postgres_host 127.0.0.1 \
+            --postgres_port 5432 \
+            --postgres_user postgres \
+            --postgres_password postgres \
+            --postgres_database geniusrise\
+            --postgres_table state \
+        listen \
+            --args \
+                model_name="paddleocr" \
+                device_map="cuda:0" \
+                endpoint="*" \
+                port=3000 \
+                cors_domain="http://localhost:3000" \
+                username="user" \
+                password="password"
+    ```
+
+    Huggingface models:
+
+    ```bash
+    genius ImageOCRAPI rise \
+        batch \
+            --input_s3_bucket geniusrise-test \
+            --input_s3_folder none \
+        batch \
+            --output_s3_bucket geniusrise-test \
+            --output_s3_folder none \
+        postgres \
+            --postgres_host 127.0.0.1 \
+            --postgres_port 5432 \
+            --postgres_user postgres \
+            --postgres_password postgres \
+            --postgres_database geniusrise\
+            --postgres_table state \
+        listen \
+            --args \
+                model_name="facebook/nougat-base" \
+                model_class="VisionEncoderDecoderModel" \
+                processor_class="NougatProcessor" \
+                device_map="cuda:0" \
+                use_cuda=True \
+                precision="float" \
+                quantization=0 \
+                max_memory=None \
+                torchscript=False \
+                compile=False \
+                flash_attention=False \
+                better_transformers=False \
+                endpoint="*" \
+                port=3000 \
+                cors_domain="http://localhost:3000" \
+                username="user" \
+                password="password"
+    ```
+    """
+
     def __init__(self, input: BatchInput, output: BatchOutput, state: State, **kwargs):
+        """
+        Initializes the ImageOCRAPI with configurations for input, output, state management, and OCR model specifics.
+
+        Args:
+            input (BatchInput): Configuration for the input data.
+            output (BatchOutput): Configuration for the output data.
+            state (State): State management for the API.
+            **kwargs: Additional keyword arguments for extended functionality.
+        """
         super().__init__(input=input, output=output, state=state)
         self.hf_model = True
 
-    def initialize_model(
-        self,
-        model_name: str = None,
-    ):
+    def initialize_model(self, model_name: str):
         if model_name == "easyocr":
             lang = self.model_args.get("lang", "en")
             self.reader = easyocr.Reader(["ch_sim", lang], quantize=self.quantization)
@@ -52,6 +169,38 @@ class ImageOCRAPI(VisionAPI):
     @cherrypy.tools.json_out()
     @cherrypy.tools.allow(methods=["POST"])
     def ocr(self):
+        """
+        Endpoint for performing OCR on an uploaded image. It accepts a base64-encoded image, decodes it, preprocesses
+        it through the specified OCR model, and returns the recognized text.
+
+        Args:
+            None - Expects input through the POST request's JSON body including 'image_base64', 'model_name',
+                   and 'use_easyocr_bbox' (optional).
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the success status, recognized text ('result'), and the original
+            image name ('image_name') if provided.
+
+        Raises:
+            Exception: If an error occurs during image processing or OCR.
+
+        Example CURL Request:
+        ```bash
+        curl -X POST localhost:3000/api/v1/ocr \
+            -H "Content-Type: application/json" \
+            -d '{"image_base64": "<base64-encoded-image>", "model_name": "easyocr", "use_easyocr_bbox": true}'
+        ```
+
+        or
+
+        ```bash
+        (base64 -w 0 test_images_ocr/ReceiptSwiss.jpg | awk '{print "{\"image_base64\": \""$0"\", \"max_length\": 1024}"}' > /tmp/image_payload.json)
+        curl -X POST http://localhost:3000/api/v1/ocr \
+            -H "Content-Type: application/json" \
+            -u user:password \
+            -d @/tmp/image_payload.json | jq
+        ```
+        """
         if not hasattr(self, "model") or not self.model:
             self.hf_model = False
             self.initialize_model(self.model_name)
@@ -76,6 +225,18 @@ class ImageOCRAPI(VisionAPI):
             raise e
 
     def process_huggingface_models(self, image: Image.Image, use_easyocr_bbox: bool):
+        """
+        Processes the image using a Hugging Face model specified for OCR tasks. Supports advanced configurations
+        and post-processing to handle various OCR-related challenges.
+
+        Args:
+            image (Image.Image): The image to process.
+            use_easyocr_bbox (bool): Whether to use EasyOCR to detect text bounding boxes before processing with
+                                     Hugging Face models.
+
+        Returns:
+            str: The recognized text from the image.
+        """
         # Convert PIL Image to Tensor
         pixel_values = self.processor(images=image, return_tensors="pt").pixel_values
         if self.use_cuda:
@@ -126,6 +287,18 @@ class ImageOCRAPI(VisionAPI):
         return sequence
 
     def process_other_models(self, image: Image.Image) -> Any:
+        """
+        Processes the image using non-Hugging Face OCR models like EasyOCR or PaddleOCR based on the initialization.
+
+        Args:
+            image (Image.Image): The image to process.
+
+        Returns:
+            Any: The OCR results which might include text, bounding boxes, and confidence scores depending on the model.
+
+        Raises:
+            ValueError: If an invalid or unsupported OCR model is specified.
+        """
         # Convert PIL Image to OpenCV format
         open_cv_image = np.array(image)
         open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2BGR)
@@ -157,6 +330,17 @@ class ImageOCRAPI(VisionAPI):
         image: Image.Image,
         use_cuda: bool,
     ):
+        """
+        A helper method to use EasyOCR for detecting text bounding boxes before processing the image with
+        a Hugging Face OCR model.
+
+        Args:
+            image (Image.Image): The image to process.
+            use_cuda (bool): Whether to use GPU acceleration for EasyOCR.
+
+        Returns:
+            str: The recognized text from the image after processing it through the specified OCR model.
+        """
         # Initialize EasyOCR reader
         reader = easyocr.Reader(["ch_sim", "en"], quantize=False)
 
