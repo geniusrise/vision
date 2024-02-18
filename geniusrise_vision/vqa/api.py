@@ -34,7 +34,7 @@ class VisualQAAPI(VisionAPI):
         Initialize the VisualQA API with a specified model and its configuration.
         Inherits from VisionAPI to leverage pre-trained models for Visual Question Answering tasks.
         """
-        super().__init__(input=input, output=output, state=state, **kwargs)
+        super().__init__(input=input, output=output, state=state)
 
     @cherrypy.expose
     @cherrypy.tools.json_in()
@@ -54,15 +54,12 @@ class VisualQAAPI(VisionAPI):
             data = cherrypy.request.json
             image_base64 = data.get("image_base64", "")
             question = data.get("question", "")
-            max_length = data.get("max_length", 512)
 
             generation_params = data
             if "image_base64" in generation_params:
                 del generation_params["image_base64"]
             if "question" in generation_params:
                 del generation_params["question"]
-            if "max_length" in generation_params:
-                del generation_params["max_length"]
 
             if not image_base64 or not question:
                 raise ValueError("Both 'image_base64' and 'question' fields are required.")
@@ -70,15 +67,26 @@ class VisualQAAPI(VisionAPI):
             image_bytes = base64.b64decode(image_base64)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-            # Prepare inputs for the model
-            inputs = self.processor(
-                texts=[question],
-                images=[image],
-                return_tensors="pt",
-                padding="max_length",
-                truncation=True,
-                max_length=max_length,
-            )
+            if "uform" in self.model_name.lower():
+                # Prepare inputs for the model
+                inputs = self.processor(
+                    texts=[question],
+                    images=[image],
+                    return_tensors="pt",
+                    padding="max_length",
+                    truncation=True,
+                    max_length=512,
+                )
+            elif "git" in self.model_name.lower():
+                pixel_values = self.processor(images=image, return_tensors="pt").pixel_values
+                input_ids = self.processor(text=question, add_special_tokens=False).input_ids
+                input_ids = [self.processor.tokenizer.cls_token_id] + input_ids
+                input_ids = torch.tensor(input_ids).unsqueeze(0)
+                inputs = {"pixel_values": pixel_values, "input_ids": input_ids}
+            elif "llava" in self.model_name.lower():
+                inputs = self.processor(text=question, images=image, return_tensors="pt")
+            else:
+                inputs = self.processor(image, question, return_tensors="pt")
 
             if self.use_cuda:
                 inputs = {k: v.to(self.device_map) for k, v in inputs.items()}
@@ -86,13 +94,17 @@ class VisualQAAPI(VisionAPI):
             # Model inference
             with torch.no_grad():
                 outputs = self.model.generate(**inputs, **generation_params)
+
+            if "uform" in self.model_name.lower():
                 prompt_len = inputs["input_ids"].shape[1]
                 decoded_text = self.processor.batch_decode(outputs[:, prompt_len:])[0]
+            else:
+                decoded_text = self.processor.decode(outputs[0], skip_special_tokens=True)
 
             response = {"question": question, "answer": decoded_text}
 
             return response
 
         except Exception as e:
-            self.log.error(f"Error processing visual question answering task: {e}")
-            raise cherrypy.HTTPError(500, "Internal Server Error")
+            self.log.exception(f"Error processing visual question answering task: {e}")
+            raise e
