@@ -21,6 +21,7 @@ from geniusrise import BatchInput, BatchOutput, Bolt, State
 from geniusrise.logging import setup_logger
 from transformers import AutoModel, AutoProcessor
 from geniusrise_vision.base.communication import send_email
+from uform.gen_model import VLMForCausalLM, VLMProcessor
 
 
 class VisionBulk(Bolt):
@@ -151,6 +152,15 @@ class VisionBulk(Bolt):
 
         if use_cuda and not device_map:
             device_map = "auto"
+
+        # Note: exception for Uform models
+        if "uform" in model_name.lower():
+            model = VLMForCausalLM.from_pretrained(model_name)
+            processor = VLMProcessor.from_pretrained(processor_name)
+            if use_cuda:
+                model = model.to(device_map)
+
+            return model, processor
 
         ModelClass = getattr(transformers, model_class)
         processorClass = getattr(transformers, processor_class)
