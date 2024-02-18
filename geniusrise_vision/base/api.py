@@ -16,15 +16,31 @@
 from typing import Any, Dict, Optional
 
 import cherrypy
+import threading
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise.logging import setup_logger
+import json
 
-from .bulk import ImageBulk
+from .bulk import VisionBulk
 
 
-class VisionAPI(ImageBulk):
+# Define a global lock for sequential access control
+sequential_lock = threading.Lock()
+
+
+def sequential_tool():
+    with sequential_lock:
+        # Yield to signal that the request can proceed
+        yield
+
+
+# Register the custom tool
+cherrypy.tools.sequential = cherrypy.Tool("before_handler", sequential_tool)
+
+
+class VisionAPI(VisionBulk):
     """
-    The VisionAPI class inherits from ImageBulk and is designed to facilitate
+    The VisionAPI class inherits from VisionBulk and is designed to facilitate
     the handling of vision-based tasks using a pre-trained machine learning model.
     It sets up a server to process image-related requests using a specified model.
     """
@@ -49,6 +65,20 @@ class VisionAPI(ImageBulk):
         super().__init__(input=input, output=output, state=state)
         self.log = setup_logger(self)
 
+    def validate_password(self, realm, username, password):
+        """
+        Validate the username and password against expected values.
+
+        Args:
+            realm (str): The authentication realm.
+            username (str): The provided username.
+            password (str): The provided password.
+
+        Returns:
+            bool: True if credentials are valid, False otherwise.
+        """
+        return username == self.username and password == self.password
+
     def listen(
         self,
         model_name: str,
@@ -56,7 +86,13 @@ class VisionAPI(ImageBulk):
         processor_class: str = "AutoProcessor",
         device_map: str | Dict | None = "auto",
         max_memory={0: "24GB"},
-        torchscript: bool = True,
+        use_cuda: bool = False,
+        precision: str = "float16",
+        quantization: int = 0,
+        torchscript: bool = False,
+        compile: bool = False,
+        flash_attention: bool = False,
+        better_transformers: bool = False,
         endpoint: str = "*",
         port: int = 3000,
         cors_domain: str = "http://localhost:3000",
@@ -73,7 +109,12 @@ class VisionAPI(ImageBulk):
             processor_class (str, optional): The class of the processor for input image preprocessing. Defaults to "AutoProcessor".
             device_map (str | Dict | None, optional): Device mapping for model inference. Defaults to "auto".
             max_memory (Dict[int, str], optional): Maximum memory allocation for model inference. Defaults to {0: "24GB"}.
+            precision (str): The floating-point precision to be used by the model. Options are 'float32', 'float16', 'bfloat16'.
+            quantization (int): The bit level for model quantization (0 for none, 8 for 8-bit quantization).
             torchscript (bool, optional): Whether to use TorchScript for model optimization. Defaults to True.
+            compile (bool, optional): Whether to compile the model before fine-tuning. Defaults to False.
+            flash_attention (bool): Whether to use flash attention 2. Default is False.
+            better_transformers (bool): Flag to enable Better Transformers optimization for faster processing.
             endpoint (str, optional): The network endpoint for the server. Defaults to "*".
             port (int, optional): The network port for the server. Defaults to 3000.
             cors_domain (str, optional): The domain to allow for CORS requests. Defaults to "http://localhost:3000".
@@ -86,8 +127,16 @@ class VisionAPI(ImageBulk):
         self.processor_class = processor_class
         self.device_map = device_map
         self.max_memory = max_memory
+        self.use_cuda = use_cuda
+        self.precision = precision
+        self.quantization = quantization
         self.torchscript = torchscript
+        self.compile = compile
+        self.flash_attention = flash_attention
+        self.better_transformers = better_transformers
         self.model_args = model_args
+        self.username = username
+        self.password = password
 
         # Extract model revision details if specified in model_name
         if ":" in model_name:
@@ -105,19 +154,26 @@ class VisionAPI(ImageBulk):
         self.processor_name = model_name
         self.processor_revision = processor_revision
 
-        # Load the specified models with the given configurations
-        self.model, self.processor = self.load_models(
-            model_name=self.model_name,
-            processor_name=self.processor_name,
-            model_revision=self.model_revision,
-            processor_revision=self.processor_revision,
-            model_class=self.model_class,
-            processor_class=self.processor_class,
-            device_map=self.device_map,
-            max_memory=self.max_memory,
-            torchscript=self.torchscript,
-            **self.model_args,
-        )
+        if model_name not in ["easyocr", "mmocr", "paddleocr"]:
+            # Load the specified models with the given configurations
+            self.model, self.processor = self.load_models(
+                model_name=self.model_name,
+                processor_name=self.processor_name,
+                model_revision=self.model_revision,
+                processor_revision=self.processor_revision,
+                model_class=self.model_class,
+                processor_class=self.processor_class,
+                use_cuda=self.use_cuda,
+                precision=self.precision,
+                quantization=self.quantization,
+                device_map=self.device_map,
+                max_memory=self.max_memory,
+                torchscript=self.torchscript,
+                compile=self.compile,
+                flash_attention=self.flash_attention,
+                better_transformers=self.better_transformers,
+                # **self.model_args,
+            )
 
         def CORS():
             """
@@ -125,12 +181,8 @@ class VisionAPI(ImageBulk):
             This allows the server to accept requests from the specified domain.
             """
             # Setting up CORS headers
-            cherrypy.response.headers[
-                "Access-Control-Allow-Origin"
-            ] = "http://localhost:3000"
-            cherrypy.response.headers[
-                "Access-Control-Allow-Methods"
-            ] = "GET, POST, PUT, DELETE, OPTIONS"
+            cherrypy.response.headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
+            cherrypy.response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
             cherrypy.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
             cherrypy.response.headers["Access-Control-Allow-Credentials"] = "true"
 
@@ -138,7 +190,7 @@ class VisionAPI(ImageBulk):
                 cherrypy.response.status = 200
                 return True
 
-            cherrypy.config.update(
+        cherrypy.config.update(
             {
                 "server.socket_host": "0.0.0.0",
                 "server.socket_port": port,
@@ -190,4 +242,3 @@ def error_page(status, message, traceback, version):
         "message": message,
     }
     return json.dumps(response)
-

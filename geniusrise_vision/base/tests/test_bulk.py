@@ -21,7 +21,7 @@ import torch
 # import transformers
 from geniusrise.core import BatchInput, BatchOutput, InMemoryState
 
-from geniusrise_vision.base.bulk import ImageBulk
+from geniusrise_vision.base.bulk import VisionBulk
 
 
 @pytest.fixture(
@@ -52,7 +52,7 @@ def hfa():
     output = BatchOutput(output_dir, "geniusrise-test", "api_output")
     state = InMemoryState()
 
-    hfa = ImageBulk(
+    hfa = VisionBulk(
         input=input,
         output=output,
         state=state,

@@ -16,10 +16,10 @@
 import os
 from collections import defaultdict
 from typing import Dict, Optional, Union
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import TensorDataset
 import numpy as np
 import torch
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from PIL import Image
 from transformers import EvalPrediction
 from sklearn.metrics import accuracy_score
@@ -31,8 +31,7 @@ from geniusrise_vision.base import VisionFineTuner
 class ImageClassificationFineTuner(VisionFineTuner):
     def load_dataset(
         self,
-        dataset_path: Union[str, None] = None,
-        hf_dataset: Union[str, None] = None,
+        dataset_path: str,
         is_multiclass: bool = False,
         **kwargs,
     ) -> Union[Dataset, DatasetDict, Optional[Dataset]]:
@@ -41,19 +40,27 @@ class ImageClassificationFineTuner(VisionFineTuner):
 
         Args:
             dataset_path (Union[str, None], optional): The local path to the dataset directory. Defaults to None.
-            hf_dataset (Union[str, None], optional): The Hugging Face dataset identifier. Defaults to None.
             is_multiclass (bool, optional): Set to True for multi-class classification. Defaults to False.
             **kwargs: Additional arguments.
 
         Returns:
             Union[Dataset, DatasetDict, Optional[Dataset]]: The loaded dataset.
         """
-        if dataset_path:
-            return self._load_local_dataset(dataset_path, is_multiclass, **kwargs)
-        elif hf_dataset:
-            return load_dataset(hf_dataset, **kwargs)
+
+        if self.use_huggingface_dataset:
+            dataset = load_dataset(self.huggingface_dataset)
+        elif os.path.isfile(os.path.join(dataset_path, "dataset_info.json")):
+            dataset = load_from_disk(dataset_path, **kwargs)
         else:
-            raise ValueError("Either 'dataset_path' or 'hf_dataset' must be provided")
+            dataset = self._load_local_dataset(dataset_path, is_multiclass, **kwargs)
+
+        if hasattr(self, "map_data") and self.map_data:
+            fn = eval(self.map_data)  # type: ignore
+            dataset = dataset.map(fn)
+        else:
+            dataset = dataset
+
+        return dataset
 
     def _load_local_dataset(
         self, dataset_path: str, is_multiclass: bool = False, **kwargs
@@ -72,14 +79,11 @@ class ImageClassificationFineTuner(VisionFineTuner):
         label_to_index = self._create_label_index(dataset_path)
         self._save_label_index(label_to_index)
 
-        image_labels = defaultdict(list)
+        image_labels = defaultdict(list)  # type: ignore
         num_classes = len(label_to_index)
 
         # Determine if the dataset has 'train' and 'test' directories
-        has_train_test_split = all(
-            os.path.isdir(os.path.join(dataset_path, split))
-            for split in ["train", "test"]
-        )
+        has_train_test_split = all(os.path.isdir(os.path.join(dataset_path, split)) for split in ["train", "test"])
         splits = ["train", "test"] if has_train_test_split else [""]
 
         # Iterate through splits and class directories
@@ -96,18 +100,18 @@ class ImageClassificationFineTuner(VisionFineTuner):
                             # Use image file name for label aggregation
                             if img_file in image_labels and is_multiclass:
                                 # Add the new label index if it's not already present
-                                if label_idx not in image_labels[img_file]['labels']:
-                                    image_labels[img_file]['labels'].append(label_idx)
+                                if label_idx not in image_labels[img_file]["labels"]:
+                                    image_labels[img_file]["labels"].append(label_idx)
                             else:
                                 # Store both the full path and label
-                                image_labels[img_file] = {'path': img_path, 'labels': [label_idx]}
+                                image_labels[img_file] = {"path": img_path, "labels": [label_idx]}
 
         images, labels = [], []
         for img_file, data in image_labels.items():
-            img_path = data['path']  # Retrieve the full path
-            label_indices = data['labels']
+            img_path = data["path"]  # Retrieve the full path
+            label_indices = data["labels"]
             try:
-                with Image.open(img_path).convert('RGB') as img:
+                with Image.open(img_path).convert("RGB") as img:
                     # Convert image to tensor and then to float
                     image_tensor = pil_to_tensor(img).float()
                     if image_tensor.nelement() == 0:  # Check for empty tensor
@@ -115,7 +119,7 @@ class ImageClassificationFineTuner(VisionFineTuner):
                     images.append(image_tensor)
 
                     if is_multiclass:
-                        # OneHot Encoding 
+                        # OneHot Encoding
                         label_tensor = torch.zeros(num_classes, dtype=torch.long)
                         label_tensor.scatter_(0, torch.tensor(label_indices, dtype=torch.long), 1)
                     else:
@@ -123,17 +127,12 @@ class ImageClassificationFineTuner(VisionFineTuner):
 
                     labels.append(label_tensor)
             except Exception as e:
-                self.log.exception(
-                    f"Error loading image {os.path.basename(img_path)}: {e}"
-                )
+                self.log.exception(f"Error loading image {os.path.basename(img_path)}: {e}")
 
         if not images:
             raise RuntimeError("No images were loaded.")
 
-        images = torch.stack(images)
-        labels = torch.stack(labels)
-
-        tensor_dataset = TensorDataset(images, labels)
+        tensor_dataset = TensorDataset(torch.stack(images), torch.stack(labels))
         return tensor_dataset
 
     def custom_vision_collator(self, batch):
@@ -148,7 +147,7 @@ class ImageClassificationFineTuner(VisionFineTuner):
         """
         # Assuming each item in the batch is a tuple (image, label)
         pixel_values = [item[0] for item in batch]  # Extract all image tensors
-        labels = [item[1] for item in batch]        # Extract all label tensors
+        labels = [item[1] for item in batch]  # Extract all label tensors
 
         # Stack the extracted image tensors and label tensors
         pixel_values = torch.stack(pixel_values)
@@ -167,13 +166,10 @@ class ImageClassificationFineTuner(VisionFineTuner):
             Dict[str, int]: A dictionary mapping label names to indices.
         """
         # Check if 'train' and 'test' directories exist
-        has_train_test_split = all(
-            os.path.isdir(os.path.join(dataset_path, split))
-            for split in ["train", "test"]
-        )
+        has_train_test_split = all(os.path.isdir(os.path.join(dataset_path, split)) for split in ["train", "test"])
 
         # Initialize an empty set for class names
-        class_names = set()
+        class_names = set()  # type: ignore
 
         # Choose the directories to scan for class names based on the dataset structure
         if has_train_test_split:
@@ -186,7 +182,6 @@ class ImageClassificationFineTuner(VisionFineTuner):
         label_to_index = {cls_name: i for i, cls_name in enumerate(sorted(class_names))}
         return label_to_index
 
-
     def _save_label_index(self, label_to_index: Dict[str, int]):
         """
         Save the label index in the model's configuration.
@@ -196,13 +191,9 @@ class ImageClassificationFineTuner(VisionFineTuner):
         """
         if self.model.config:
             self.model.config.label2id = label_to_index
-            self.model.config.id2label = {
-                id: label for label, id in label_to_index.items()
-            }
+            self.model.config.id2label = {id: label for label, id in label_to_index.items()}
         else:
-            self.log.warning(
-                "Model configuration is not loaded. Cannot save label index."
-            )
+            self.log.warning("Model configuration is not loaded. Cannot save label index.")
 
     def compute_metrics(self, eval_pred: EvalPrediction) -> Dict[str, float]:
         predictions, labels = eval_pred

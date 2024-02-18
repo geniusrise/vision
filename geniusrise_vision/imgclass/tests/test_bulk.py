@@ -20,19 +20,21 @@ import tempfile
 import json
 from PIL import Image
 from geniusrise import BatchInput, BatchOutput, InMemoryState
-from geniusrise_vision.imgclass.bulk import VisionClassificationBulk
+from geniusrise_vision.imgclass.bulk import ImageClassificationBulk
 from transformers import AutoModelForImageClassification, AutoProcessor
 
-IMAGE_FORMATS = ['jpg', 'png', 'bmp']
+IMAGE_FORMATS = ["jpg", "png", "bmp"]
 IMAGE_SIZE = (224, 224)
 NUM_TEST_IMAGES = 10
+
 
 def create_test_images(directory, image_format):
     os.makedirs(directory, exist_ok=True)
     for i in range(NUM_TEST_IMAGES):
-        image = Image.new('RGB', IMAGE_SIZE, color='blue')
-        image_path = os.path.join(directory, f'test_image_{i}.{image_format}')
+        image = Image.new("RGB", IMAGE_SIZE, color="blue")
+        image_path = os.path.join(directory, f"test_image_{i}.{image_format}")
         image.save(image_path)
+
 
 @pytest.fixture
 def image_classification_bulk(tmpdir):
@@ -42,13 +44,14 @@ def image_classification_bulk(tmpdir):
     os.makedirs(output_dir, exist_ok=True)
 
     state = InMemoryState()
-    klass = VisionClassificationBulk(
+    klass = ImageClassificationBulk(
         input=BatchInput(input_dir, "geniusrise-test", "test-🤗-input"),
         output=BatchOutput(output_dir, "geniusrise-test", "test-🤗-output"),
         state=state,
     )
 
     return klass
+
 
 @pytest.fixture(params=IMAGE_FORMATS)
 def image_dataset(request, tmpdir):
@@ -58,27 +61,29 @@ def image_dataset(request, tmpdir):
     create_test_images(dataset_path, ext)
     return dataset_path, ext
 
+
 def test_load_dataset(image_classification_bulk, image_dataset):
     dataset_path, _ = image_dataset
     dataset = image_classification_bulk.load_dataset(dataset_path)
     assert len(dataset) == NUM_TEST_IMAGES
 
+
 def test_prediction_file_creation_and_content(image_classification_bulk, image_dataset):
     dataset_path, ext = image_dataset
     image_classification_bulk.load_dataset(dataset_path)
-    
+
     model_name = "microsoft/resnet-50"
     image_classification_bulk.classify(
         model_name=model_name,
         model_class="AutoModelForImageClassification",
         processor_class="AutoProcessor",
-        device_map="cpu"
+        device_map="cpu",
     )
 
     prediction_files = glob.glob(os.path.join(image_classification_bulk.output.output_folder, "*.json"))
     assert len(prediction_files) > 0, "No prediction files found in the output directory."
 
-    with open(prediction_files[0], 'r') as file:
+    with open(prediction_files[0], "r") as file:
         predictions = json.load(file)
         assert isinstance(predictions, list), "Predictions file should contain a list."
         assert len(predictions) > 0, "Prediction list is empty."

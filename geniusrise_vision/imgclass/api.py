@@ -14,49 +14,31 @@
 # limitations under the License.
 
 from geniusrise import BatchInput, BatchOutput, State
-from geniusrise.logging import setup_logger
 from geniusrise_vision.base import VisionAPI
 import io
-import logging
 import cherrypy
 import numpy as np
-import json
 import torch
 import base64
 from PIL import Image
-from transformers import AutoModelForImageClassification, AutoImageProcessor
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger(__name__)
 
-class VisionClassificationAPI(VisionAPI):
-    def __init__(self, model_name: str, input: BatchInput, output: BatchOutput, state: State):
+class ImageClassificationAPI(VisionAPI):
+    def __init__(
+        self,
+        input: BatchInput,
+        output: BatchOutput,
+        state: State,
+        **kwargs,
+    ):
         """
         Initialize the API with a specified model.
         """
         super().__init__(input=input, output=output, state=state)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.initialize_model(model_name)
 
-    def initialize_model(
-        self, 
-        model_name: str = None):
-        try:
-            self.model_name = model_name
-            # Initialize model and processor
-            self.model = AutoModelForImageClassification.from_pretrained(model_name)
-            self.processor = AutoImageProcessor.from_pretrained(model_name)
-            self.model.to(self.device)
-            log.info("Model and processor are initialized. API is ready to serve requests.")
-        except Exception as e:
-            return {"success": False, "error": str(e)}  
-
-    # Copied from transformers.pipelines.text_classification.sigmoid
     def sigmoid(self, _outputs):
         return 1.0 / (1.0 + np.exp(-_outputs))
 
-    # Copied from transformers.pipelines.text_classification.softmax
     def softmax(self, _outputs):
         maxes = np.max(_outputs, axis=-1, keepdims=True)
         shifted_exp = np.exp(_outputs - maxes)
@@ -69,6 +51,9 @@ class VisionClassificationAPI(VisionAPI):
     def classify_image(self):
         """
         Endpoint for classifying an image and returning the image with label scores.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the original input text and the classification scores for each label.
         """
         try:
             data = cherrypy.request.json
@@ -76,14 +61,20 @@ class VisionClassificationAPI(VisionAPI):
             image_bytes = base64.b64decode(image_base64)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
+            generation_params = data
+            if "image_base64" in generation_params:
+                del generation_params["image_base64"]
+
             # Preprocess the image
             inputs = self.processor(images=image, return_tensors="pt")
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            if self.use_cuda:
+                inputs = {k: v.to(self.device_map) for k, v in inputs.items()}
 
             # Perform inference
             with torch.no_grad():
-                outputs = self.model(**inputs).logits
-                outputs = outputs.numpy()
+                outputs = self.model(**inputs, **generation_params).logits
+                outputs = outputs.cpu().numpy()
 
             if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
                 scores = self.sigmoid(outputs)
@@ -93,12 +84,17 @@ class VisionClassificationAPI(VisionAPI):
                 scores = outputs  # No function applied
 
             # Prepare scores and labels for the response
-            labeled_scores = [{"label": self.model.config.id2label[i], "score": float(score)} for i, score in enumerate(scores.flatten())]
+            labeled_scores = [
+                {"label": self.model.config.id2label[i], "score": float(score)}
+                for i, score in enumerate(scores.flatten())
+            ]
 
-            response = {"original_image": image_base64, "predictions": labeled_scores}
+            max_score = max([x["score"] for x in labeled_scores])
+            max_scorers = [x for x in labeled_scores if x["score"] == max_score]
+            response = {"predictions": max_scorers, "all_predictions": labeled_scores}
 
             return response
 
         except Exception as e:
-            log.error(f"Error processing image: {e}")
-            return {"success": False, "error": str(e)}
+            self.log.error(f"Error processing image: {e}")
+            raise e
