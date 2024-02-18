@@ -17,36 +17,20 @@ import os
 import torch
 import json
 import torch.nn as nn
-import torch.optim as optim
-import torchvision.transforms as transforms
-from geniusrise import BatchInput, BatchOutput, Bolt, State
-from geniusrise.logging import setup_logger
-from torchvision.transforms import ColorJitter
-from torch.utils.data import DataLoader
+from geniusrise import BatchInput, BatchOutput, State
 from geniusrise_vision.base import VisionFineTuner
-from typing import Union, List, Dict, Optional, Callable
+from typing import Union, Dict, Optional, Callable
 from PIL import Image
 import albumentations as A
 import numpy as np
-from torchvision.transforms import functional as F
 import evaluate
-from torch.utils.data import TensorDataset
-from torchvision.transforms import ToTensor
-from datasets import load_dataset, load_metric, Dataset, DatasetDict
-from transformers import default_data_collator, MaskFormerImageProcessor
-from transformers import EvalPrediction
-from torch.utils.data import DataLoader
-from transformers import AutoConfig, EvalPrediction, Trainer, TrainingArguments
+from datasets import load_dataset, Dataset, DatasetDict
+from transformers import MaskFormerImageProcessor
+from transformers import EvalPrediction, Trainer, TrainingArguments
 
 
 class SegmentationFineTuner(VisionFineTuner):
-    def __init__(
-        self, 
-        input: BatchInput, 
-        output: BatchOutput, 
-        state: State, 
-        **kwargs
-    ) -> None:
+    def __init__(self, input: BatchInput, output: BatchOutput, state: State, **kwargs) -> None:
         super().__init__(input=input, output=output, state=state)
 
     def load_dataset(
@@ -73,7 +57,6 @@ class SegmentationFineTuner(VisionFineTuner):
             return load_dataset(hf_dataset, **kwargs)
         else:
             raise ValueError("Either 'dataset_path' or 'hf_dataset' must be provided")
-    
 
     def _load_local_dataset(self, dataset_path: str, **kwargs) -> Union[Dataset, DatasetDict, Optional[Dataset]]:
         dataset = []
@@ -96,33 +79,35 @@ class SegmentationFineTuner(VisionFineTuner):
     def _process_directory(self, directory_path: str) -> Union[Dataset, DatasetDict, Optional[Dataset]]:
         processed_data = []
         for file_name in os.listdir(directory_path):
-            if file_name.endswith('.jpg'):
+            if file_name.endswith(".jpg"):
                 image_name = os.path.splitext(file_name)[0]
 
                 # Load Image
                 image_path = os.path.join(directory_path, file_name)
-                image = Image.open(image_path).convert('RGB')
+                image = Image.open(image_path).convert("RGB")
 
                 # Load Segmentation Bitmap
                 seg_path = os.path.join(directory_path, f"{image_name}_seg.png")
-                seg_image = Image.open(seg_path).convert('L') if os.path.exists(seg_path) else None
+                seg_image = Image.open(seg_path).convert("L") if os.path.exists(seg_path) else None
 
                 # Load JSON Metadata
                 json_path = os.path.join(directory_path, f"{image_name}.json")
                 metadata = {}
                 inst2class = {}
                 if os.path.exists(json_path):
-                    with open(json_path, 'r') as json_file:
+                    with open(json_path, "r") as json_file:
                         metadata = json.load(json_file)
                         # Extract inst2class mapping from metadata (assuming it's in the format of panoptic segmentation datasets)
-                        inst2class = {segment['id']: segment['category_id'] for segment in metadata.get('segments_info', [])}
+                        inst2class = {
+                            segment["id"]: segment["category_id"] for segment in metadata.get("segments_info", [])
+                        }
 
                 # Add to dataset
                 dataset_entry = {
-                    'pixel_values': image,
-                    'label': seg_image,
-                    'metadata': metadata,
-                    'inst2class': inst2class
+                    "pixel_values": image,
+                    "label": seg_image,
+                    "metadata": metadata,
+                    "inst2class": inst2class,
                 }
                 processed_data.append(dataset_entry)
 
@@ -141,7 +126,7 @@ class SegmentationFineTuner(VisionFineTuner):
             raw_train_dataset = self.load_dataset(train_dataset_path, **kwargs)
             self.train_dataset = self.apply_transforms(raw_train_dataset, self.train_transforms)
             # self.train_dataloader = DataLoader(self.train_dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
-            
+
             if self.evaluate:
                 raw_eval_dataset = self.load_dataset(eval_dataset_path, **kwargs)
                 self.eval_dataset = self.apply_transforms(raw_eval_dataset, self.eval_transforms)
@@ -153,7 +138,6 @@ class SegmentationFineTuner(VisionFineTuner):
         except Exception as e:
             self.log.exception(f"Failed to preprocess data: {e}")
             raise e
-
 
     def inspect_dataset(self, dataset, num_samples=5):
         for i, sample in enumerate(dataset):
@@ -173,7 +157,6 @@ class SegmentationFineTuner(VisionFineTuner):
                     print(f"  {key}: {type(value)}")
             print()
 
-
     # def collate_fn(self, batch):
     #     inputs = list(zip(*batch))
     #     images = inputs[0]
@@ -186,7 +169,7 @@ class SegmentationFineTuner(VisionFineTuner):
     #         segmentation_maps=segmentation_maps,
     #         return_tensors="pt",
     #     )
-    
+
     # return batch
 
     def apply_transforms(self, dataset, transform_function):
@@ -220,8 +203,8 @@ class SegmentationFineTuner(VisionFineTuner):
         # Apply jitter directly to the PIL image
         # image = jitter(example_batch['pixel_values'])
         # Directly use the single label
-        image = example_batch['pixel_values']
-        label = example_batch['label']
+        image = example_batch["pixel_values"]
+        label = example_batch["label"]
 
         if self.model.config.__class__.__name__ in ["MaskFormerConfig", "Mask2FormerConfig"]:
             image = np.array(image)
@@ -231,24 +214,28 @@ class SegmentationFineTuner(VisionFineTuner):
             ADE_MEAN = np.array([123.675, 116.280, 103.530]) / 255
             ADE_STD = np.array([58.395, 57.120, 57.375]) / 255
 
-            transform = A.Compose([
-                A.LongestMaxSize(max_size=1333),
-                A.RandomCrop(width=512, height=512),
-                A.HorizontalFlip(p=0.5),
-                A.Normalize(mean=ADE_MEAN, std=ADE_STD),
-            ])
+            transform = A.Compose(
+                [
+                    A.LongestMaxSize(max_size=1333),
+                    A.RandomCrop(width=512, height=512),
+                    A.HorizontalFlip(p=0.5),
+                    A.Normalize(mean=ADE_MEAN, std=ADE_STD),
+                ]
+            )
 
             # Apply Albumentations transformations
             transformed = transform(image=image, mask=mask)
-            image, segmentation_map = transformed['image'], transformed['mask']
+            image, segmentation_map = transformed["image"], transformed["mask"]
 
             # convert to C, H, W
-            image = image.transpose(2,0,1)
+            image = image.transpose(2, 0, 1)
 
             # Create a preprocessor
-            preprocessor = MaskFormerImageProcessor(ignore_index=0, reduce_labels=False, do_resize=False, do_rescale=False, do_normalize=False)
+            preprocessor = MaskFormerImageProcessor(
+                ignore_index=0, reduce_labels=False, do_resize=False, do_rescale=False, do_normalize=False
+            )
 
-            inputs = preprocessor([image], segmentation_maps=[segmentation_map], return_tensors ="pt")
+            inputs = preprocessor([image], segmentation_maps=[segmentation_map], return_tensors="pt")
             # inputs = {k: v.squeeze() if isinstance(v, torch.Tensor) else v[0] for k,v in inputs.items()}
 
             for key, value in inputs.items():
@@ -256,14 +243,18 @@ class SegmentationFineTuner(VisionFineTuner):
                     print(f"{key} shape: {value.shape}")
                 else:
                     print(f"{key}: {value}")
-                    print(key,[x.shape for x in value])
-     
+                    print(key, [x.shape for x in value])
 
             # return image, segmentation_map
 
         elif self.model.config.__class__.__name__ in ["OneFormerConfig"]:
             inputs = self.processor([image], [label], task_inputs=["semantic"], return_tensors="pt")
-        elif self.model.config.__class__.__name__ in {"MobileNetV2Config","DPTConfig","MobileViTConfig","MobileViTV2Config"}:
+        elif self.model.config.__class__.__name__ in {
+            "MobileNetV2Config",
+            "DPTConfig",
+            "MobileViTConfig",
+            "MobileViTV2Config",
+        }:
             image = np.array(image)
             mask = np.array(label)
             unique_values = np.unique(mask)
@@ -279,24 +270,28 @@ class SegmentationFineTuner(VisionFineTuner):
             ADE_MEAN = np.array([123.675, 116.280, 103.530]) / 255
             ADE_STD = np.array([58.395, 57.120, 57.375]) / 255
 
-            transform = A.Compose([
-                A.LongestMaxSize(max_size=1333),
-                A.RandomCrop(width=512, height=512),
-                # A.HorizontalFlip(p=0.5),
-                A.Normalize(mean=ADE_MEAN, std=ADE_STD),
-            ])
+            transform = A.Compose(
+                [
+                    A.LongestMaxSize(max_size=1333),
+                    A.RandomCrop(width=512, height=512),
+                    # A.HorizontalFlip(p=0.5),
+                    A.Normalize(mean=ADE_MEAN, std=ADE_STD),
+                ]
+            )
 
             # Apply Albumentations transformations
             transformed = transform(image=image, mask=remapped_mask)
-            image, label = transformed['image'], transformed['mask']
+            image, label = transformed["image"], transformed["mask"]
 
             # # convert to C, H, W
             # image = image.transpose(2,0,1)
 
             # Process the image for classification/semantic segmentation models without inst2class
-            inputs = self.processor(image, reduce_labels=True, do_resize=False, do_rescale=False, do_normalize=False, return_tensors="pt")
+            inputs = self.processor(
+                image, reduce_labels=True, do_resize=False, do_rescale=False, do_normalize=False, return_tensors="pt"
+            )
             # Add label to inputs if it's necessary for your task
-            inputs['labels'] = torch.tensor(label, dtype=torch.long)
+            inputs["labels"] = torch.tensor(label, dtype=torch.long)
 
         elif self.model.config.__class__.__name__ in {"Data2VecVisionConfig"}:
             # Process the image for classification/semantic segmentation models without inst2class
@@ -310,22 +305,22 @@ class SegmentationFineTuner(VisionFineTuner):
                     print(f"{key} shape: {value.shape}")
                 else:
                     print(f"{key}: {value}")
-                    print(key,[x.shape for x in value])
-     
+                    print(key, [x.shape for x in value])
+
         return inputs
 
     def eval_transforms(self, example_batch):
         # Directly use the single image
-        image = example_batch['pixel_values']
+        image = example_batch["pixel_values"]
         # Directly use the single label
-        label = example_batch['label']
+        label = example_batch["label"]
         # Process the image and label
         inputs = self.processor([image], [label], return_tensors="pt")
         return inputs
 
     def custom_vision_collator(self, batch):
         """
-        Collates batches of our dataset. The batch is a list of dictionaries 
+        Collates batches of our dataset. The batch is a list of dictionaries
         where each dictionary contains 'pixel_values' and 'label' as keys.
 
         Args:
@@ -333,20 +328,20 @@ class SegmentationFineTuner(VisionFineTuner):
 
         Returns:
             The collated batch.
-        """      
+        """
 
         if self.model.config.__class__.__name__ in ["MaskFormerConfig", "Mask2FormerConfig", "OneFormerConfig"]:
-            pixel_values = [item['pixel_values'] for item in batch]
+            pixel_values = [item["pixel_values"] for item in batch]
             # pixel_values = [torch.tensor(image, dtype=torch.float32) if not isinstance(image, torch.Tensor) else image for image in pixel_values]
-            
+
             # Check shapes of pixel_values before and after stacking
             print("Shapes of pixel_values before stacking:", [pv.shape for pv in pixel_values])
             pixel_values = torch.stack(pixel_values).squeeze(1)
             print("Shape of pixel_values after stacking and squeezing:", pixel_values.shape)
 
-            pixel_mask = [item['pixel_mask'] for item in batch]
-            mask_labels = [item['mask_labels'] for item in batch]
-            class_labels = [item['class_labels'] for item in batch]
+            pixel_mask = [item["pixel_mask"] for item in batch]
+            mask_labels = [item["mask_labels"] for item in batch]
+            class_labels = [item["class_labels"] for item in batch]
 
             print("Shapes of pixel_mask:", [pm.shape for pm in pixel_mask])
             pixel_mask = torch.stack(pixel_mask).squeeze(1)
@@ -356,7 +351,12 @@ class SegmentationFineTuner(VisionFineTuner):
             print("Shapes of each item in mask_labels:", [[ml.shape for ml in sublist] for sublist in mask_labels])
             print("Shapes of each item in class_labels:", [[cl.shape for cl in sublist] for sublist in class_labels])
 
-            return {"pixel_values": pixel_values, "pixel_mask": pixel_mask, "class_labels": class_labels, "mask_labels": mask_labels}
+            return {
+                "pixel_values": pixel_values,
+                "pixel_mask": pixel_mask,
+                "class_labels": class_labels,
+                "mask_labels": mask_labels,
+            }
 
             # inputs = list(zip(*batch))
             # images = inputs[0]
@@ -370,26 +370,30 @@ class SegmentationFineTuner(VisionFineTuner):
             #     segmentation_maps=segmentation_maps,
             #     return_tensors="pt",
             # )
-            
+
             # return batch
 
         elif self.model.config.__class__.__name__ in ["MobileNetV2Config", "DPTConfig", "SegformerConfig"]:
-            pixel_values = [item['pixel_values'] for item in batch]
-            pixel_values = [torch.tensor(image, dtype=torch.float32) if not isinstance(image, torch.Tensor) else image for image in pixel_values]
-            labels = [item['labels'] for item in batch]
+            pixel_values = [item["pixel_values"] for item in batch]
+            pixel_values = [
+                torch.tensor(image, dtype=torch.float32) if not isinstance(image, torch.Tensor) else image
+                for image in pixel_values
+            ]
+            labels = [item["labels"] for item in batch]
             pixel_values = torch.stack(pixel_values).squeeze(1)
             labels = torch.stack(labels).squeeze(1).long()
             return {"pixel_values": pixel_values, "labels": labels}
 
         else:
-            pixel_values = [item['pixel_values'] for item in batch]
-            pixel_values = [torch.tensor(image, dtype=torch.float32) if not isinstance(image, torch.Tensor) else image for image in pixel_values]
-            labels = [item['labels'] for item in batch]
+            pixel_values = [item["pixel_values"] for item in batch]
+            pixel_values = [
+                torch.tensor(image, dtype=torch.float32) if not isinstance(image, torch.Tensor) else image
+                for image in pixel_values
+            ]
+            labels = [item["labels"] for item in batch]
             pixel_values = torch.stack(pixel_values).squeeze(1)
             labels = torch.stack(labels).squeeze(1).long()
             return {"pixel_values": pixel_values, "labels": labels}
-
-
 
     def _create_label_index(self, id2label: Dict[int, str]) -> Dict[str, int]:
         """
@@ -404,7 +408,6 @@ class SegmentationFineTuner(VisionFineTuner):
         label_to_index = {label: id for id, label in id2label.items()}
         return label_to_index
 
-
     def _save_label_index(self, label_to_index: Dict[str, int]):
         """
         Save the label index for segmentation in the model's configuration.
@@ -416,12 +419,9 @@ class SegmentationFineTuner(VisionFineTuner):
             self.model.config.label2id = label_to_index
             self.model.config.id2label = {id: label for label, id in label_to_index.items()}
         else:
-            self.log.warning(
-                "Model configuration is not loaded. Cannot save label index for segmentation."
-            )
+            self.log.warning("Model configuration is not loaded. Cannot save label index for segmentation.")
 
-
-    def fine_tune(
+    def fine_tune(  # type: ignore
         self,
         model_name: str,
         processor_name: str,
@@ -431,7 +431,7 @@ class SegmentationFineTuner(VisionFineTuner):
         processor_class: str = "AutoProcessor",
         device_map: str | dict = "auto",
         evaluate: bool = False,
-        subtask:  str = "semantic",
+        subtask: str = "semantic",
         map_data: Optional[Callable] = None,
         hf_repo_id: Optional[str] = None,
         hf_commit_message: Optional[str] = None,
@@ -481,9 +481,7 @@ class SegmentationFineTuner(VisionFineTuner):
             self.hf_create_pr = hf_create_pr
             self.map_data = map_data
 
-            model_kwargs = {
-                k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k
-            }
+            model_kwargs = {k.replace("model_", ""): v for k, v in kwargs.items() if "model_" in k}
 
             self.load_models(
                 model_name=self.model_name,
@@ -495,22 +493,12 @@ class SegmentationFineTuner(VisionFineTuner):
             )
 
             # Load dataset
-            dataset_kwargs = {
-                k.replace("data_", ""): v for k, v in kwargs.items() if "data_" in k
-            }
+            dataset_kwargs = {k.replace("data_", ""): v for k, v in kwargs.items() if "data_" in k}
             self.preprocess_data(**dataset_kwargs)
 
             # Separate training and evaluation arguments
-            trainer_kwargs = {
-                k.replace("trainer_", ""): v
-                for k, v in kwargs.items()
-                if "trainer_" in k
-            }
-            training_kwargs = {
-                k.replace("training_", ""): v
-                for k, v in kwargs.items()
-                if "training_" in k
-            }
+            trainer_kwargs = {k.replace("trainer_", ""): v for k, v in kwargs.items() if "trainer_" in k}
+            training_kwargs = {k.replace("training_", ""): v for k, v in kwargs.items() if "training_" in k}
 
             print(len(self.model.config.id2label))
 
@@ -549,9 +537,7 @@ class SegmentationFineTuner(VisionFineTuner):
 
             # Save the model configuration to Hugging Face Hub if hf_repo_id is not None
             if self.hf_repo_id:
-                self.config.save_pretrained(
-                    os.path.join(self.output.output_folder, "model")
-                )
+                self.config.save_pretrained(os.path.join(self.output.output_folder, "model"))
                 self.upload_to_hf_hub()
 
         except Exception as e:
@@ -559,7 +545,6 @@ class SegmentationFineTuner(VisionFineTuner):
             self.state.set_state(self.id, {"success": False, "exception": str(e)})
             raise
         self.state.set_state(self.id, {"success": True})
-
 
     def compute_metrics(self, eval_pred: EvalPrediction) -> Dict[str, float]:
         metric = evaluate.load("mean_iou")
@@ -586,4 +571,3 @@ class SegmentationFineTuner(VisionFineTuner):
                 if isinstance(value, np.ndarray):
                     metrics[key] = value.tolist()
             return metrics
-

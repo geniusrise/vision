@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .base import VisionBulk
+from .base import VisionAPI
+from .base import VisionFineTuner
+
 from .imgclass import ImageClassificationAPI
 from .imgclass import ImageClassificationBulk
 from .imgclass import ImageClassificationFineTuner
@@ -21,3 +25,5 @@ from .ocr import ImageOCRAPI
 from .ocr import ImageOCRBulk
 
 from .segment import VisionSegmentationAPI
+
+from .vqa import VisualQAAPI
