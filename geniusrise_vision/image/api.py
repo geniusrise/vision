@@ -53,20 +53,27 @@ class ImageGenerationAPI(VisionAPI):
         try:
             data = cherrypy.request.json
             prompt = data.get("prompt", "")
+            max_length = data.get("max_length", 512)
+
+            generation_params = data
+            if "prompt" in generation_params:
+                del generation_params["prompt"]
+            if "max_length" in generation_params:
+                del generation_params["max_length"]
 
             if not prompt:
                 raise ValueError("The 'prompt' field is required.")
 
             # Model inference
             inputs = self.processor(
-                text=prompt, return_tensors="pt", padding="max_length", truncation=True, max_length=512
+                text=prompt, return_tensors="pt", padding="max_length", truncation=True, max_length=max_length
             )
 
             if self.use_cuda:
                 inputs = {k: v.cuda() for k, v in inputs.items()}
 
             with torch.no_grad():
-                outputs = self.model.generate(**inputs)
+                outputs = self.model.generate(**inputs, **generation_params)
                 generated_image_tensor = outputs.images[0]  # Assuming the model returns an object with an images list
 
             # Convert tensor to PIL Image
@@ -77,7 +84,7 @@ class ImageGenerationAPI(VisionAPI):
             generated_image.save(buffered, format="JPEG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
 
-            response = {"generated_image_base64": img_str}
+            response = {"image_base64": img_str}
 
             return response
 
