@@ -21,3 +21,5 @@ from .ocr import ImageOCRAPI
 from .ocr import ImageOCRBulk
 
 from .segment import VisionSegmentationAPI
+
+from .vqa import VisualQAAPI
