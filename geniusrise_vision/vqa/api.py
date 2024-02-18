@@ -54,6 +54,15 @@ class VisualQAAPI(VisionAPI):
             data = cherrypy.request.json
             image_base64 = data.get("image_base64", "")
             question = data.get("question", "")
+            max_length = data.get("max_length", 512)
+
+            generation_params = data
+            if "image_base64" in generation_params:
+                del generation_params["image_base64"]
+            if "question" in generation_params:
+                del generation_params["question"]
+            if "max_length" in generation_params:
+                del generation_params["max_length"]
 
             if not image_base64 or not question:
                 raise ValueError("Both 'image_base64' and 'question' fields are required.")
@@ -63,7 +72,12 @@ class VisualQAAPI(VisionAPI):
 
             # Prepare inputs for the model
             inputs = self.processor(
-                text=question, images=image, return_tensors="pt", padding="max_length", truncation=True, max_length=512
+                texts=[question],
+                images=[image],
+                return_tensors="pt",
+                padding="max_length",
+                truncation=True,
+                max_length=max_length,
             )
 
             if self.use_cuda:
@@ -71,12 +85,11 @@ class VisualQAAPI(VisionAPI):
 
             # Model inference
             with torch.no_grad():
-                outputs = self.model(**inputs)
-                answer_scores = outputs.logits.softmax(dim=-1)
-                predicted_answer_index = answer_scores.argmax(-1).item()
-                predicted_answer = self.processor.decode(predicted_answer_index)
+                outputs = self.model.generate(**inputs, **generation_params)
+                prompt_len = inputs["input_ids"].shape[1]
+                decoded_text = self.processor.batch_decode(outputs[:, prompt_len:])[0]
 
-            response = {"question": question, "answer": predicted_answer}
+            response = {"question": question, "answer": decoded_text}
 
             return response
 
