@@ -13,6 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .api import ImageClassificationAPI
-from .bulk import ImageClassificationBulk
-from .fine_tune import ImageClassificationFineTuner
+from .imgclass import ImageClassificationAPI
+from .imgclass import ImageClassificationBulk
+from .imgclass import ImageClassificationFineTuner
+
+from .ocr import ImageOCRAPI
+from .ocr import ImageOCRBulk
+
+from .segment import VisionSegmentationAPI
