@@ -22,6 +22,7 @@ from geniusrise.logging import setup_logger
 from transformers import AutoModel, AutoProcessor
 from geniusrise_vision.base.communication import send_email
 from uform.gen_model import VLMForCausalLM, VLMProcessor
+from optimum.bettertransformer import BetterTransformer
 
 
 class VisionBulk(Bolt):
@@ -243,6 +244,9 @@ class VisionBulk(Bolt):
 
         if compile and not torchscript:
             model = torch.compile(model)
+
+        if better_transformers:
+            model = BetterTransformer.transform(model, keep_original_model=True)
 
         # Set to evaluation mode for inference
         model.eval()
