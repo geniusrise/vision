@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from typing import Any, Dict, Optional, Tuple
-
+import os
 import torch
 import transformers
 from geniusrise import BatchInput, BatchOutput, Bolt, State
@@ -166,7 +166,14 @@ class VisionBulk(Bolt):
         processorClass = getattr(transformers, processor_class)
 
         # Load the model and processor
-        processor = processorClass.from_pretrained(processor_name, revision=processor_revision, torch_dtype=torch_dtype)
+        if model_name == "local":
+            processor = processorClass.from_pretrained(
+                os.path.join(self.input.get(), "/model"), torch_dtype=torch_dtype
+            )
+        else:
+            processor = processorClass.from_pretrained(
+                processor_name, revision=processor_revision, torch_dtype=torch_dtype
+            )
 
         self.log.info(f"Loading model from {model_name} {model_revision} with {model_args}")
 
@@ -174,35 +181,65 @@ class VisionBulk(Bolt):
             model_args = {**model_args, **{"attn_implementation": "flash_attention_2"}}
 
         if quantization == 8:
-            model = ModelClass.from_pretrained(
-                model_name,
-                revision=model_revision,
-                torchscript=torchscript,
-                max_memory=max_memory,
-                device_map=device_map,
-                load_in_8bit=True,
-                **model_args,
-            )
+            if model_name == "local":
+                model = ModelClass.from_pretrained(
+                    os.path.join(self.input.get(), "/model"),
+                    torchscript=torchscript,
+                    max_memory=max_memory,
+                    device_map=device_map,
+                    load_in_8bit=True,
+                    **model_args,
+                )
+            else:
+                model = ModelClass.from_pretrained(
+                    model_name,
+                    revision=model_revision,
+                    torchscript=torchscript,
+                    max_memory=max_memory,
+                    device_map=device_map,
+                    load_in_8bit=True,
+                    **model_args,
+                )
         elif quantization == 4:
-            model = ModelClass.from_pretrained(
-                model_name,
-                revision=model_revision,
-                torchscript=torchscript,
-                max_memory=max_memory,
-                device_map=device_map,
-                load_in_4bit=True,
-                **model_args,
-            )
+            if model_name == "local":
+                model = ModelClass.from_pretrained(
+                    os.path.join(self.input.get(), "/model"),
+                    torchscript=torchscript,
+                    max_memory=max_memory,
+                    device_map=device_map,
+                    load_in_4bit=True,
+                    **model_args,
+                )
+            else:
+                model = ModelClass.from_pretrained(
+                    model_name,
+                    revision=model_revision,
+                    torchscript=torchscript,
+                    max_memory=max_memory,
+                    device_map=device_map,
+                    load_in_4bit=True,
+                    **model_args,
+                )
         else:
-            model = ModelClass.from_pretrained(
-                model_name,
-                revision=model_revision,
-                torch_dtype=torch_dtype,
-                torchscript=torchscript,
-                max_memory=max_memory,
-                device_map=device_map,
-                **model_args,
-            )
+            if model_name == "local":
+                model = ModelClass.from_pretrained(
+                    os.path.join(self.input.get(), "/model"),
+                    torch_dtype=torch_dtype,
+                    torchscript=torchscript,
+                    max_memory=max_memory,
+                    device_map=device_map,
+                    **model_args,
+                )
+            else:
+                model = ModelClass.from_pretrained(
+                    model_name,
+                    revision=model_revision,
+                    torch_dtype=torch_dtype,
+                    torchscript=torchscript,
+                    max_memory=max_memory,
+                    device_map=device_map,
+                    **model_args,
+                )
 
         if compile and not torchscript:
             model = torch.compile(model)
