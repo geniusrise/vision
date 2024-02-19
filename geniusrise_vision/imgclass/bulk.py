@@ -146,7 +146,7 @@ class ImageClassificationBulk(VisionBulk):
         device_map: str | Dict | None = "auto",
         max_memory=None,
         torchscript=False,
-        compile: bool = True,
+        compile: bool = False,
         flash_attention: bool = False,
         better_transformers: bool = False,
         batch_size=32,
