@@ -44,3 +44,4 @@ PyMuPDF==1.20.2
 python-Levenshtein==0.25.0
 uform==1.1.0
 multiprocess==0.70.15
+optimum==1.16.2
