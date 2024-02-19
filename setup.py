@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 
 setup(
     name="geniusrise-vision",
-    version="0.1.1",
+    version="0.1.2",
     packages=find_packages(exclude=["tests", "tests.*"]),
     install_requires=requirements,
     python_requires=">=3.10",
@@ -22,7 +22,7 @@ setup(
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Build Tools",
-        "License :: OSI Approved :: Apache Software License v2.0",
+        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
