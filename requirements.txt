@@ -1,11 +1,11 @@
-geniusrise==0.1.6
+geniusrise==0.1.7
 torch==2.2.0
 accelerate==0.27.2
-transformers==4.37.2
+transformers==4.36.2
 evaluate==0.4.1
 datasets==2.16.1
-autoawq==0.1.8
-auto-gptq==0.6.0
+autoawq==0.2.2
+auto-gptq==0.7.0
 bitsandbytes==0.42.0
 CherryPy==18.9.0
 flash-attn==2.5.3
