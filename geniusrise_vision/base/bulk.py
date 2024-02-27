@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List, Union
 import os
 import torch
 import transformers
@@ -23,6 +23,9 @@ from transformers import AutoModel, AutoProcessor
 from geniusrise_vision.base.communication import send_email
 from uform.gen_model import VLMForCausalLM, VLMProcessor
 from optimum.bettertransformer import BetterTransformer
+import llama_cpp
+from llama_cpp import Llama as LlamaCPP
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
 class VisionBulk(Bolt):
@@ -253,6 +256,140 @@ class VisionBulk(Bolt):
 
         self.log.debug("Hugging Face model and processor loaded successfully.")
         return model, processor
+
+    def load_models_llama_cpp(
+        self,
+        model_path: str,
+        n_gpu_layers: int = 0,
+        split_mode: int = llama_cpp.LLAMA_SPLIT_LAYER,
+        main_gpu: int = 0,
+        tensor_split: Optional[List[float]] = None,
+        vocab_only: bool = False,
+        use_mmap: bool = True,
+        use_mlock: bool = False,
+        kv_overrides: Optional[Dict[str, Union[bool, int, float]]] = None,
+        seed: int = llama_cpp.LLAMA_DEFAULT_SEED,
+        n_ctx: int = 512,
+        n_batch: int = 512,
+        n_threads: Optional[int] = None,
+        n_threads_batch: Optional[int] = None,
+        rope_scaling_type: Optional[int] = llama_cpp.LLAMA_ROPE_SCALING_UNSPECIFIED,
+        rope_freq_base: float = 0.0,
+        rope_freq_scale: float = 0.0,
+        yarn_ext_factor: float = -1.0,
+        yarn_attn_factor: float = 1.0,
+        yarn_beta_fast: float = 32.0,
+        yarn_beta_slow: float = 1.0,
+        yarn_orig_ctx: int = 0,
+        mul_mat_q: bool = True,
+        logits_all: bool = False,
+        embedding: bool = False,
+        offload_kqv: bool = True,
+        last_n_tokens_size: int = 64,
+        lora_base: Optional[str] = None,
+        lora_scale: float = 1.0,
+        lora_path: Optional[str] = None,
+        numa: Union[bool, int] = False,
+        chat_format: Optional[str] = None,
+        chat_handler: Optional[llama_cpp.llama_chat_format.LlamaChatCompletionHandler] = None,
+        draft_model: Optional[llama_cpp.LlamaDraftModel] = None,
+        tokenizer: Optional[PreTrainedTokenizerBase] = None,
+        verbose: bool = True,
+        **kwargs,
+    ) -> Tuple[LlamaCPP, Optional[PreTrainedTokenizerBase]]:
+        """
+        Initializes and loads LLaMA model with llama.cpp backend, along with an optional tokenizer.
+
+        Args:
+            model_path (str): Path to the LLaMA model.
+            n_gpu_layers (int): Number of layers to offload to GPU. Default is 0.
+            split_mode (int): Split mode for distributing model across GPUs.
+            main_gpu (int): Main GPU index.
+            tensor_split (Optional[List[float]]): Tensor split configuration.
+            vocab_only (bool): Whether to load vocabulary only.
+            use_mmap (bool): Use memory-mapped files for model loading.
+            use_mlock (bool): Lock model data in RAM.
+            kv_overrides (Optional[Dict[str, Union[bool, int, float]]]): Key-value pairs for model overrides.
+            seed (int): Random seed for initialization.
+            n_ctx (int): Number of context tokens.
+            n_batch (int): Batch size for processing prompts.
+            n_threads (Optional[int]): Number of threads for generation.
+            n_threads_batch (Optional[int]): Number of threads for batch processing.
+            rope_scaling_type (Optional[int]): RoPE scaling type.
+            rope_freq_base (float): Base frequency for RoPE.
+            rope_freq_scale (float): Frequency scaling for RoPE.
+            yarn_ext_factor (float): YaRN extrapolation mix factor.
+            yarn_attn_factor (float): YaRN attention factor.
+            yarn_beta_fast (float): YaRN beta fast parameter.
+            yarn_beta_slow (float): YaRN beta slow parameter.
+            yarn_orig_ctx (int): Original context size for YaRN.
+            mul_mat_q (bool): Whether to multiply matrices for queries.
+            logits_all (bool): Return logits for all tokens.
+            embedding (bool): Enable embedding mode only.
+            offload_kqv (bool): Offload K, Q, V matrices to GPU.
+            last_n_tokens_size (int): Size for the last_n_tokens buffer.
+            lora_base (Optional[str]): Base model path for LoRA.
+            lora_scale (float): Scale factor for LoRA adjustments.
+            lora_path (Optional[str]): Path to LoRA adjustments.
+            numa (Union[bool, int]): NUMA configuration.
+            chat_format (Optional[str]): Chat format configuration.
+            chat_handler (Optional[llama_cpp.LlamaChatCompletionHandler]): Handler for chat completions.
+            draft_model (Optional[llama_cpp.LlamaDraftModel]): Draft model for speculative decoding.
+            tokenizer (Optional[PreTrainedTokenizerBase]): Custom tokenizer instance.
+            verbose (bool): Enable verbose logging.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Tuple[LlamaCPP, Optional[PreTrainedTokenizerBase]]: The loaded LLaMA model and tokenizer.
+        """
+        if not os.path.exists(model_path):
+            raise ValueError(f"Model path {model_path} does not exist.")
+
+        self.log.info(f"Loading LLaMA model from {model_path} with llama.cpp backend.")
+
+        llama_model = LlamaCPP(
+            model_path=model_path,
+            n_gpu_layers=n_gpu_layers,
+            split_mode=split_mode,
+            main_gpu=main_gpu,
+            tensor_split=tensor_split,
+            vocab_only=vocab_only,
+            use_mmap=use_mmap,
+            use_mlock=use_mlock,
+            kv_overrides=kv_overrides,
+            seed=seed,
+            n_ctx=n_ctx,
+            n_batch=n_batch,
+            n_threads=n_threads,
+            n_threads_batch=n_threads_batch,
+            rope_scaling_type=rope_scaling_type,
+            rope_freq_base=rope_freq_base,
+            rope_freq_scale=rope_freq_scale,
+            yarn_ext_factor=yarn_ext_factor,
+            yarn_attn_factor=yarn_attn_factor,
+            yarn_beta_fast=yarn_beta_fast,
+            yarn_beta_slow=yarn_beta_slow,
+            yarn_orig_ctx=yarn_orig_ctx,
+            mul_mat_q=mul_mat_q,
+            logits_all=logits_all,
+            embedding=embedding,
+            offload_kqv=offload_kqv,
+            last_n_tokens_size=last_n_tokens_size,
+            lora_base=lora_base,
+            lora_scale=lora_scale,
+            lora_path=lora_path,
+            numa=numa,
+            chat_format=chat_format,
+            chat_handler=chat_handler,
+            draft_model=draft_model,
+            tokenizer=tokenizer,
+            verbose=verbose,
+            **kwargs,
+        )
+
+        self.log.info("LLaMA model loaded successfully.")
+
+        return llama_model, tokenizer
 
     def done(self):
         if self.notification_email:
