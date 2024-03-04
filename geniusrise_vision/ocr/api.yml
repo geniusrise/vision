@@ -1,0 +1,73 @@
+openapi: 3.0.0
+info:
+  title: Image OCR API
+  version: 1.0.0
+  description: API for performing Optical Character Recognition (OCR) on images using various OCR engines.
+
+servers:
+  - url: http://localhost:3000/api/v1
+
+paths:
+  /ocr:
+    post:
+      summary: Perform OCR on an image
+      description: Processes an uploaded image for OCR and returns the recognized text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OCRRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OCRResponse"
+        "400":
+          description: Bad request
+        "500":
+          description: Internal server error
+      security:
+        - basicAuth: []
+
+components:
+  schemas:
+    OCRRequest:
+      type: object
+      properties:
+        image_base64:
+          type: string
+          description: Base64-encoded image data
+        model_name:
+          type: string
+          description: Name of the OCR model to use (e.g., "easyocr", "paddleocr", or a Hugging Face model name)
+        use_easyocr_bbox:
+          type: boolean
+          default: false
+          description: Whether to use EasyOCR to detect text bounding boxes before processing with Hugging Face models
+        image_name:
+          type: string
+          description: Name of the image (optional)
+      required:
+        - image_base64
+        - model_name
+
+    OCRResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates whether the OCR operation was successful
+        result:
+          type: string
+          description: The recognized text from the image
+        image_name:
+          type: string
+          description: The name of the processed image
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic

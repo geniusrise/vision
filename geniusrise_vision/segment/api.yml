@@ -1,0 +1,71 @@
+openapi: 3.0.0
+info:
+  title: Vision Segmentation API
+  version: 1.0.0
+  description: API for performing image segmentation tasks using various models.
+
+servers:
+  - url: http://localhost:3000/api/v1
+
+paths:
+  /segment_image:
+    post:
+      summary: Segment an image
+      description: Processes an image for segmentation and returns the segmentation masks along with labels and scores.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SegmentationRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SegmentationResult"
+        "400":
+          description: Bad request
+        "500":
+          description: Internal server error
+      security:
+        - basicAuth: []
+
+components:
+  schemas:
+    SegmentationRequest:
+      type: object
+      properties:
+        image_base64:
+          type: string
+          description: Base64-encoded image data
+        subtask:
+          type: string
+          description: Segmentation subtask (panoptic, instance, or semantic)
+      required:
+        - image_base64
+        - subtask
+
+    SegmentationResult:
+      type: object
+      properties:
+        label:
+          type: string
+          description: Label of the segmented object or region
+        score:
+          type: number
+          format: float
+          nullable: true
+          description: Confidence score of the segmentation (if applicable)
+        mask:
+          type: string
+          format: byte
+          description: Base64-encoded segmentation mask image
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic

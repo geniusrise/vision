@@ -1,0 +1,74 @@
+openapi: 3.0.0
+info:
+  title: Image Classification API
+  version: 1.0.0
+  description: API for classifying images using a pre-trained model.
+
+servers:
+  - url: http://localhost:3000/api/v1
+
+paths:
+  /classify_image:
+    post:
+      summary: Classify an image
+      description: Classifies an uploaded image and returns the classification scores.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassifyImageRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassifyImageResponse'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+      security:
+        - basicAuth: []
+
+components:
+  schemas:
+    ClassifyImageRequest:
+      type: object
+      properties:
+        image_base64:
+          type: string
+          description: Base64-encoded image data
+      required:
+        - image_base64
+
+    Prediction:
+      type: object
+      properties:
+        label:
+          type: string
+          description: Label of the prediction
+        score:
+          type: number
+          format: float
+          description: Confidence score of the prediction
+
+    ClassifyImageResponse:
+      type: object
+      properties:
+        predictions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Prediction'
+          description: Predictions with the highest scores
+        all_predictions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Prediction'
+          description: All prediction scores
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
