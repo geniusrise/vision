@@ -17,14 +17,13 @@ from geniusrise import BatchInput, BatchOutput, State
 from geniusrise_vision.base import VisionAPI
 import io
 import cherrypy
-import numpy as np
-import torch
 import base64
 from PIL import Image
-from typing import Dict, Any, List
+from typing import Dict, Any
+from .inference import _ImageClassificationInference
 
 
-class ImageClassificationAPI(VisionAPI):
+class ImageClassificationAPI(VisionAPI, _ImageClassificationInference):
     r"""
     ImageClassificationAPI extends the VisionAPI for image classification tasks. This API provides functionalities
     to classify images into various categories based on the trained model it uses. It supports both single-label
@@ -88,33 +87,6 @@ class ImageClassificationAPI(VisionAPI):
         """
         super().__init__(input=input, output=output, state=state)
 
-    def sigmoid(self, _outputs: np.ndarray) -> np.ndarray:
-        """
-        Applies the sigmoid function to the model's outputs for binary classification or multi-label classification tasks.
-
-        Args:
-            _outputs (np.ndarray): The raw outputs from the model.
-
-        Returns:
-            np.ndarray: The outputs after applying the sigmoid function.
-        """
-        return 1.0 / (1.0 + np.exp(-_outputs))
-
-    def softmax(self, _outputs: np.ndarray) -> np.ndarray:
-        """
-        Applies the softmax function to the model's outputs for single-label classification tasks, ensuring the output
-        scores sum to 1 across classes.
-
-        Args:
-            _outputs (np.ndarray): The raw outputs from the model.
-
-        Returns:
-            np.ndarray: The outputs after applying the softmax function.
-        """
-        maxes = np.max(_outputs, axis=-1, keepdims=True)
-        shifted_exp = np.exp(_outputs - maxes)
-        return shifted_exp / shifted_exp.sum(axis=-1, keepdims=True)
-
     @cherrypy.expose
     @cherrypy.tools.json_in()
     @cherrypy.tools.json_out()
@@ -158,29 +130,7 @@ class ImageClassificationAPI(VisionAPI):
             if "image_base64" in generation_params:
                 del generation_params["image_base64"]
 
-            # Preprocess the image
-            inputs = self.processor(images=image, return_tensors="pt")
-
-            if self.use_cuda:
-                inputs = {k: v.to(self.device_map) for k, v in inputs.items()}
-
-            # Perform inference
-            with torch.no_grad():
-                outputs = self.model(**inputs, **generation_params).logits
-                outputs = outputs.cpu().numpy()
-
-            if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
-                scores = self.sigmoid(outputs)
-            elif self.model.config.problem_type == "single_label_classification" or self.model.config.num_labels > 1:
-                scores = self.softmax(outputs)
-            else:
-                scores = outputs  # No function applied
-
-            # Prepare scores and labels for the response
-            labeled_scores: List[Dict[str, Any]] = [
-                {"label": self.model.config.id2label[i], "score": float(score)}
-                for i, score in enumerate(scores.flatten())
-            ]
+            labeled_scores = self.classify_one(image, **generation_params)
 
             max_score = max([x["score"] for x in labeled_scores])
             max_scorers = [x for x in labeled_scores if x["score"] == max_score]

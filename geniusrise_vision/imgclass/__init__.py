@@ -15,4 +15,3 @@
 
 from .api import ImageClassificationAPI
 from .bulk import ImageClassificationBulk
-from .fine_tune import ImageClassificationFineTuner

@@ -20,17 +20,17 @@ from typing import Dict, Optional, Union, Tuple
 import torchvision.transforms as transforms
 import os
 import torch
-import numpy as np
 import json
 from PIL import Image
 import logging
+from .inference import _ImageClassificationInference
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ImageClassificationBulk")
 
 
-class ImageClassificationBulk(VisionBulk):
+class ImageClassificationBulk(VisionBulk, _ImageClassificationInference):
     """
     ImageClassificationBulk class for bulk vision classification tasks using Hugging Face models.
     Inherits from VisionBulk.
@@ -112,28 +112,6 @@ class ImageClassificationBulk(VisionBulk):
 
         # Convert lists to PyTorch Dataset
         return Dataset.from_dict({"image": images, "path": paths})
-
-    def sigmoid(self, _outputs):
-        """
-        Apply the sigmoid function to batched outputs.
-        """
-        return 1.0 / (1.0 + np.exp(-_outputs))
-
-    def softmax(self, _outputs):
-        """
-        Apply the softmax function to batched outputs.
-
-        Args:
-            _outputs (np.ndarray): Model logits of shape (batch_size, num_classes).
-
-        Returns:
-            np.ndarray: Softmax scores of shape (batch_size, num_classes).
-        """
-        # Ensure that the subtraction for numerical stability and softmax computation are done across the correct axis.
-        maxes = np.max(_outputs, axis=1, keepdims=True)
-        shifted_exp = np.exp(_outputs - maxes)
-        softmax_scores = shifted_exp / shifted_exp.sum(axis=1, keepdims=True)
-        return softmax_scores
 
     def classify(
         self,
@@ -236,40 +214,15 @@ class ImageClassificationBulk(VisionBulk):
             self.log.error("Failed to load dataset.")
             return
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Process and classify in batches
         for batch_idx in range(0, len(dataset["image"]), batch_size):
 
             batch_images = dataset["image"][batch_idx : batch_idx + batch_size]
             batch_paths = dataset["path"][batch_idx : batch_idx + batch_size]
             logger.info(f"Batch Path: {batch_paths}")
 
-            # TODO: Make this truly batch-wise processing instead of processing one by one
-            batch_inputs = self.processor(
-                images=[Image.open(img_path) for img_path in batch_paths], return_tensors="pt", padding=True
-            )
-            if self.use_cuda:
-                batch_inputs = {k: v.to(self.device_map) for k, v in batch_inputs.items()}
-
-            with torch.no_grad():
-                outputs = self.model(**batch_inputs).logits
-
-            # Apply appropriate post-processing based on the problem type
-            if self.model.config.problem_type == "multi_label_classification" or self.model.config.num_labels == 1:
-                scores = self.sigmoid(outputs.cpu().numpy())
-            elif self.model.config.problem_type == "single_label_classification" or self.model.config.num_labels > 1:
-                scores = self.softmax(outputs.cpu().numpy())
-            else:
-                scores = outputs.cpu().numpy()  # No function applied
-
-            # Process each item in the batch
+            labeled_scores = self.classify_batch(batch_paths)
             for idx, img_path in enumerate(batch_paths):
-                labeled_scores = [
-                    {"label": self.model.config.id2label[i], "score": float(score)}
-                    for i, score in enumerate(scores[idx].flatten())
-                ]
-                self._save_predictions(labeled_scores, img_path, self.output.output_folder, batch_idx)
+                self._save_predictions(labeled_scores[idx], img_path, self.output.output_folder, batch_idx)
 
     def _save_predictions(self, labeled_scores, img_path, output_path: str, batch_index) -> None:
 
