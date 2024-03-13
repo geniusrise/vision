@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Union
 
 import cherrypy
 import threading
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise.logging import setup_logger
 import json
+import llama_cpp
 
 from .bulk import VisionBulk
 
@@ -84,6 +85,40 @@ class VisionAPI(VisionBulk):
         flash_attention: bool = False,
         better_transformers: bool = False,
         concurrent_queries: bool = False,
+        use_llama_cpp: bool = False,
+        # llama.cpp params
+        llama_cpp_filename: Optional[str] = None,
+        llama_cpp_n_gpu_layers: int = 0,
+        llama_cpp_split_mode: int = llama_cpp.LLAMA_SPLIT_LAYER,
+        llama_cpp_tensor_split: Optional[List[float]] = None,
+        llama_cpp_vocab_only: bool = False,
+        llama_cpp_use_mmap: bool = True,
+        llama_cpp_use_mlock: bool = False,
+        llama_cpp_kv_overrides: Optional[Dict[str, Union[bool, int, float]]] = None,
+        llama_cpp_seed: int = llama_cpp.LLAMA_DEFAULT_SEED,
+        llama_cpp_n_ctx: int = 2048,
+        llama_cpp_n_batch: int = 512,
+        llama_cpp_n_threads: Optional[int] = None,
+        llama_cpp_n_threads_batch: Optional[int] = None,
+        llama_cpp_rope_scaling_type: Optional[int] = llama_cpp.LLAMA_ROPE_SCALING_UNSPECIFIED,
+        llama_cpp_rope_freq_base: float = 0.0,
+        llama_cpp_rope_freq_scale: float = 0.0,
+        llama_cpp_yarn_ext_factor: float = -1.0,
+        llama_cpp_yarn_attn_factor: float = 1.0,
+        llama_cpp_yarn_beta_fast: float = 32.0,
+        llama_cpp_yarn_beta_slow: float = 1.0,
+        llama_cpp_yarn_orig_ctx: int = 0,
+        llama_cpp_mul_mat_q: bool = True,
+        llama_cpp_logits_all: bool = False,
+        llama_cpp_embedding: bool = False,
+        llama_cpp_offload_kqv: bool = True,
+        llama_cpp_last_n_tokens_size: int = 64,
+        llama_cpp_lora_base: Optional[str] = None,
+        llama_cpp_lora_scale: float = 1.0,
+        llama_cpp_lora_path: Optional[str] = None,
+        llama_cpp_numa: Union[bool, int] = False,
+        llama_cpp_chat_format: Optional[str] = None,
+        llama_cpp_draft_model: Optional[llama_cpp.LlamaDraftModel] = None,
         endpoint: str = "*",
         port: int = 3000,
         cors_domain: str = "http://localhost:3000",
@@ -107,6 +142,39 @@ class VisionAPI(VisionBulk):
             flash_attention (bool): Whether to use flash attention 2. Default is False.
             better_transformers (bool): Flag to enable Better Transformers optimization for faster processing.
             concurrent_queries: (bool): Whether the API supports concurrent API calls (usually false).
+            use_llama_cpp (bool): Flag to use llama.cpp integration for language model inference.
+            llama_cpp_filename (Optional[str]): The filename of the model file for llama.cpp.
+            llama_cpp_n_gpu_layers (int): Number of layers to offload to GPU in llama.cpp configuration.
+            llama_cpp_split_mode (int): Defines how the model is split across multiple GPUs in llama.cpp.
+            llama_cpp_tensor_split (Optional[List[float]]): Custom tensor split configuration for llama.cpp.
+            llama_cpp_vocab_only (bool): Loads only the vocabulary part of the model in llama.cpp.
+            llama_cpp_use_mmap (bool): Enables memory-mapped files for model loading in llama.cpp.
+            llama_cpp_use_mlock (bool): Locks the model in RAM to prevent swapping in llama.cpp.
+            llama_cpp_kv_overrides (Optional[Dict[str, Union[bool, int, float]]]): Key-value pairs for overriding default llama.cpp model parameters.
+            llama_cpp_seed (int): Seed for random number generation in llama.cpp.
+            llama_cpp_n_ctx (int): The number of context tokens for the model in llama.cpp.
+            llama_cpp_n_batch (int): Batch size for processing prompts in llama.cpp.
+            llama_cpp_n_threads (Optional[int]): Number of threads for generation in llama.cpp.
+            llama_cpp_n_threads_batch (Optional[int]): Number of threads for batch processing in llama.cpp.
+            llama_cpp_rope_scaling_type (Optional[int]): Specifies the RoPE (Rotary Positional Embeddings) scaling type in llama.cpp.
+            llama_cpp_rope_freq_base (float): Base frequency for RoPE in llama.cpp.
+            llama_cpp_rope_freq_scale (float): Frequency scaling factor for RoPE in llama.cpp.
+            llama_cpp_yarn_ext_factor (float): Extrapolation mix factor for YaRN in llama.cpp.
+            llama_cpp_yarn_attn_factor (float): Attention factor for YaRN in llama.cpp.
+            llama_cpp_yarn_beta_fast (float): Beta fast parameter for YaRN in llama.cpp.
+            llama_cpp_yarn_beta_slow (float): Beta slow parameter for YaRN in llama.cpp.
+            llama_cpp_yarn_orig_ctx (int): Original context size for YaRN in llama.cpp.
+            llama_cpp_mul_mat_q (bool): Flag to enable matrix multiplication for queries in llama.cpp.
+            llama_cpp_logits_all (bool): Returns logits for all tokens when set to True in llama.cpp.
+            llama_cpp_embedding (bool): Enables embedding mode only in llama.cpp.
+            llama_cpp_offload_kqv (bool): Offloads K, Q, V matrices to GPU in llama.cpp.
+            llama_cpp_last_n_tokens_size (int): Size for the last_n_tokens buffer in llama.cpp.
+            llama_cpp_lora_base (Optional[str]): Base model path for LoRA adjustments in llama.cpp.
+            llama_cpp_lora_scale (float): Scale factor for LoRA adjustments in llama.cpp.
+            llama_cpp_lora_path (Optional[str]): Path to LoRA adjustments file in llama.cpp.
+            llama_cpp_numa (Union[bool, int]): NUMA configuration for llama.cpp.
+            llama_cpp_chat_format (Optional[str]): Specifies the chat format for llama.cpp.
+            llama_cpp_draft_model (Optional[llama_cpp.LlamaDraftModel]): Draft model for speculative decoding in llama.cpp.
             endpoint (str, optional): The network endpoint for the server. Defaults to "*".
             port (int, optional): The network port for the server. Defaults to 3000.
             cors_domain (str, optional): The domain to allow for CORS requests. Defaults to "http://localhost:3000".
@@ -166,6 +234,46 @@ class VisionAPI(VisionBulk):
                 flash_attention=self.flash_attention,
                 better_transformers=self.better_transformers,
                 # **self.model_args,
+            )
+        elif use_llama_cpp:
+            self.model, self.tokenizer = self.load_models_llama_cpp(
+                model=self.model_name,
+                filename=llama_cpp_filename,
+                local_dir=self.output.output_folder,
+                n_gpu_layers=llama_cpp_n_gpu_layers,
+                split_mode=llama_cpp_split_mode,
+                main_gpu=0 if self.use_cuda else -1,
+                tensor_split=llama_cpp_tensor_split,
+                vocab_only=llama_cpp_vocab_only,
+                use_mmap=llama_cpp_use_mmap,
+                use_mlock=llama_cpp_use_mlock,
+                kv_overrides=llama_cpp_kv_overrides,
+                seed=llama_cpp_seed,
+                n_ctx=llama_cpp_n_ctx,
+                n_batch=llama_cpp_n_batch,
+                n_threads=llama_cpp_n_threads,
+                n_threads_batch=llama_cpp_n_threads_batch,
+                rope_scaling_type=llama_cpp_rope_scaling_type,
+                rope_freq_base=llama_cpp_rope_freq_base,
+                rope_freq_scale=llama_cpp_rope_freq_scale,
+                yarn_ext_factor=llama_cpp_yarn_ext_factor,
+                yarn_attn_factor=llama_cpp_yarn_attn_factor,
+                yarn_beta_fast=llama_cpp_yarn_beta_fast,
+                yarn_beta_slow=llama_cpp_yarn_beta_slow,
+                yarn_orig_ctx=llama_cpp_yarn_orig_ctx,
+                mul_mat_q=llama_cpp_mul_mat_q,
+                logits_all=llama_cpp_logits_all,
+                embedding=llama_cpp_embedding,
+                offload_kqv=llama_cpp_offload_kqv,
+                last_n_tokens_size=llama_cpp_last_n_tokens_size,
+                lora_base=llama_cpp_lora_base,
+                lora_scale=llama_cpp_lora_scale,
+                lora_path=llama_cpp_lora_path,
+                numa=llama_cpp_numa,
+                chat_format=llama_cpp_chat_format,
+                draft_model=llama_cpp_draft_model,
+                # tokenizer=llama_cpp_tokenizer, # TODO: support custom tokenizers for llama.cpp
+                **model_args,
             )
 
         def sequential_locker():
