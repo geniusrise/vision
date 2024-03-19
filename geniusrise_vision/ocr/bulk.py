@@ -15,7 +15,6 @@
 
 import json
 import os
-import cv2
 from PIL import Image
 from geniusrise import BatchInput, BatchOutput, State
 from geniusrise.logging import setup_logger
@@ -27,12 +26,11 @@ from typing import Dict
 # from mmocr.apis import MMOCRInferencer
 import easyocr
 from paddleocr import PaddleOCR
-from transformers import StoppingCriteriaList
-from geniusrise_vision.ocr.utils import StoppingCriteriaScores
 from pdf2image import convert_from_path
+from .inference import OCRInference
 
 
-class ImageOCRBulk(VisionBulk):
+class ImageOCRBulk(VisionBulk, OCRInference):
     def __init__(
         self,
         input: BatchInput,
@@ -232,117 +230,21 @@ class ImageOCRBulk(VisionBulk):
             self.log.error("Failed to load dataset.")
             return
 
-        if model_name not in ["easyocr", "mmocr", "paddleocr"]:
-            self.process_huggingface_models()
-        else:
-            self.process_other_models()
-
-    def process_huggingface_models(self):
         for batch_idx in range(0, len(self.dataset["image"]), self.batch_size):
             batch_images = self.dataset["image"][batch_idx : batch_idx + self.batch_size]
             batch_paths = self.dataset["path"][batch_idx : batch_idx + self.batch_size]
 
             ocr_results = []
-            if "nougat" in self.model_name.lower():
-                for img_path in batch_paths:
-                    image = Image.open(img_path)
-                    pixel_values = self.processor(image, return_tensors="pt").pixel_values.to(self.device_map)
-                    # generate transcription
-                    outputs = self.model.generate(
-                        pixel_values.to(self.device_map),
-                        min_length=1,
-                        max_length=3584,
-                        bad_words_ids=[[self.processor.tokenizer.unk_token_id]],
-                        return_dict_in_generate=True,
-                        output_scores=True,
-                        stopping_criteria=StoppingCriteriaList([StoppingCriteriaScores()]),
-                    )
-                    sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
-                    sequence = self.processor.post_process_generation(sequence, fix_markdown=False)
-                    ocr_results.append(sequence)
-            else:
-                if self.use_easyocr_bbox:
-                    self._process_with_easyocr_bbox(batch_paths)
+            for img_path in batch_paths:
+                image = Image.open(img_path)
+
+                if model_name not in ["easyocr", "mmocr", "paddleocr"]:
+                    result = self.process_huggingface_models(image, use_easyocr_bbox)
                 else:
-                    for img_path in batch_paths:
-                        image = Image.open(img_path)
-                        pixel_values = self.processor(image, return_tensors="pt").pixel_values.to(self.device_map)
-                        outputs = self.model.generate(pixel_values)
-                        sequence = self.processor.batch_decode(outputs[0], skip_special_tokens=True)[0]
-                        ocr_results.append(sequence)
+                    result = self.process_other_models(image)
+                ocr_results.append(result)
 
-        # Save OCR results
-        self._save_ocr_results(ocr_results, batch_paths, self.output_path, batch_idx)
-
-    def process_other_models(self):
-        for batch_idx in range(0, len(self.dataset["image"]), self.batch_size):
-            batch_images = self.dataset["image"][batch_idx : batch_idx + self.batch_size]
-            batch_paths = self.dataset["path"][batch_idx : batch_idx + self.batch_size]
-
-            ocr_texts = []
-            for image_path in batch_paths:
-                if self.model_name == "easyocr":
-                    # OCR process
-                    ocr_results = self.reader.readtext(image_path, detail=0, paragraph=True)
-                    concatenated_text = " ".join(ocr_results)
-                    ocr_texts.append(concatenated_text)
-                # elif self.model_name == "mmocr":
-                #     image = cv2.imread(image_path)
-                #     if image is None or image.size == 0:
-                #         continue
-                #     result = self.mmocr_infer(image_path, save_vis=False)
-                #     predictions = result["predictions"]
-
-                #     # Extract texts and scores
-                #     texts = [pred["rec_texts"] for pred in predictions]
-                #     scores = [pred["rec_scores"] for pred in predictions]
-
-                #     # Concatenate texts for each image
-                #     concatenated_texts = [" ".join(text) for text in texts]
-                #     ocr_texts.append(" ".join(concatenated_texts))
-                elif self.model_name == "paddleocr":
-                    result = self.paddleocr_model.ocr(image_path, cls=False)
-                    # Extract texts and scores
-                    texts = [line[1][0] for line in result]
-                    scores = [line[1][1] for line in result]
-                    # Concatenate texts for each image
-                    concatenated_text = " ".join(texts)
-                    ocr_texts.append(concatenated_text)
-                else:
-                    raise ValueError("Invalid OCR engine.")
-            # Save OCR results
-            self._save_ocr_results(ocr_texts, batch_paths, self.output_path, batch_idx)
-
-    def _process_with_easyocr_bbox(self, batch_paths):
-        ocr_results = []
-
-        # Initialize EasyOCR reader
-        reader = easyocr.Reader(["ch_sim", "en"], quantize=False)
-        for image_path in batch_paths:
-            results = reader.readtext(image_path)
-            image = cv2.imread(image_path)
-            image_texts = []
-            # Recover text regions detected by EasyOCR
-            for bbox, _, _ in results:
-                # Extract coordinates from bounding box
-                x_min, y_min = map(int, bbox[0])
-                x_max, y_max = map(int, bbox[2])
-                x_min = max(0, x_min)
-                y_min = max(0, y_min)
-                x_max = min(image.shape[1], x_max)
-                y_max = min(image.shape[0], y_max)
-                # Extract text region
-                if x_max > x_min and y_max > y_min:
-                    text_region = image[y_min:y_max, x_min:x_max]
-                    pixel_values = self.processor(text_region, return_tensors="pt").pixel_values.to(self.device_map)
-                    generated_ids = self.model.generate(pixel_values)
-                    generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-                    image_texts.append(generated_text)
-
-            full_text = " ".join(image_texts)
-            ocr_results.append(full_text)
-
-        return ocr_results
+            self._save_ocr_results(ocr_results, batch_paths, self.output_path, batch_idx)
 
     def _save_ocr_results(self, ocr_texts: List[str], batch_paths: List[str], output_path: str, batch_index) -> None:
         """

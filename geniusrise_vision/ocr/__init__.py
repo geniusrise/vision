@@ -15,5 +15,3 @@
 
 from .api import ImageOCRAPI
 from .bulk import ImageOCRBulk
-
-# from .fine_tune import OCRFineTuner
